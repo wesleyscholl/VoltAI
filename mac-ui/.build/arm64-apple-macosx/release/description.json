@@ -28,6 +28,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAIViewModel.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift"
         },
         {
@@ -52,13 +56,15 @@
       "moduleOutputPath" : "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/Modules/BoltAIMacUI.swiftmodule",
       "objects" : [
         "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAICaller.swift.o",
+        "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAIViewModel.swift.o",
         "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/ContentView.swift.o",
         "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/DropZone.swift.o",
         "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/main.swift.o"
       ],
       "otherArguments" : [
         "-target",
-        "arm64-apple-macosx12.0",
+        "arm64-apple-macosx13.0",
+        "-v",
         "-O",
         "-j8",
         "-DSWIFT_PACKAGE",
@@ -94,6 +100,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAIViewModel.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/ContentView.swift.o"
         },
         {
@@ -112,6 +122,7 @@
       "prepareForIndexing" : false,
       "sources" : [
         "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAICaller.swift",
+        "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAIViewModel.swift",
         "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift",
         "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/DropZone.swift",
         "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/main.swift"
@@ -133,13 +144,15 @@
       "8",
       "-c",
       "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAICaller.swift",
+      "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAIViewModel.swift",
       "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift",
       "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/DropZone.swift",
       "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/main.swift",
       "-I",
       "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/Modules",
       "-target",
-      "arm64-apple-macosx12.0",
+      "arm64-apple-macosx13.0",
+      "-v",
       "-O",
       "-j8",
       "-DSWIFT_PACKAGE",
@@ -195,6 +208,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAIViewModel.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift"
         },
         {
@@ -218,6 +235,10 @@
         {
           "kind" : "file",
           "name" : "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAICaller.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAIViewModel.swift.o"
         },
         {
           "kind" : "file",
