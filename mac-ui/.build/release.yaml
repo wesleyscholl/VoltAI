@@ -1,0 +1,66 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "BoltAIMacUI-arm64-apple-macosx14.0-release.exe": ["<BoltAIMacUI-arm64-apple-macosx14.0-release.exe>"]
+  "BoltAIMacUI-arm64-apple-macosx14.0-release.module": ["<BoltAIMacUI-arm64-apple-macosx14.0-release.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<BoltAIMacUI-arm64-apple-macosx14.0-release.exe>","<BoltAIMacUI-arm64-apple-macosx14.0-release.module>"]
+  "test": ["<BoltAIMacUI-arm64-apple-macosx14.0-release.exe>","<BoltAIMacUI-arm64-apple-macosx14.0-release.module>"]
+default: "main"
+nodes:
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAICaller.swift","/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift","/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/DropZone.swift","/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/main.swift"]
+    outputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/sources"]
+    description: "Write auxiliary file /Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/sources"
+
+  "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAICaller.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/ContentView.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/DropZone.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/main.swift.o"]
+    outputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.product/Objects.LinkFileList"
+
+  "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Library/Developer/CommandLineTools/usr/bin/swiftc"]
+    outputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt"
+
+  "<BoltAIMacUI-arm64-apple-macosx14.0-release.exe>":
+    tool: phony
+    inputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI"]
+    outputs: ["<BoltAIMacUI-arm64-apple-macosx14.0-release.exe>"]
+
+  "<BoltAIMacUI-arm64-apple-macosx14.0-release.module>":
+    tool: phony
+    inputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAICaller.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/ContentView.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/DropZone.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/main.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/Modules/BoltAIMacUI.swiftmodule"]
+    outputs: ["<BoltAIMacUI-arm64-apple-macosx14.0-release.module>"]
+
+  "C.BoltAIMacUI-arm64-apple-macosx14.0-release.exe":
+    tool: shell
+    inputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAICaller.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/ContentView.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/DropZone.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/main.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.product/Objects.LinkFileList"]
+    outputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI"]
+    description: "Linking ./.build/arm64-apple-macosx/release/BoltAIMacUI"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-L","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release","-o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI","-module-name","BoltAIMacUI","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-dead_strip","-Xlinker","-alias","-Xlinker","_BoltAIMacUI_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.product/Objects.LinkFileList","-target","arm64-apple-macosx12.0","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xlinker","-rpath","-Xlinker","/Library/Developer/CommandLineTools/Library/Developer/Frameworks"]
+
+  "C.BoltAIMacUI-arm64-apple-macosx14.0-release.module":
+    tool: shell
+    inputs: ["/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAICaller.swift","/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift","/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/DropZone.swift","/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/main.swift","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/swift-version--1AB21518FC5DEDBE.txt","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/sources"]
+    outputs: ["/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/BoltAICaller.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/ContentView.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/DropZone.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/main.swift.o","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/Modules/BoltAIMacUI.swiftmodule"]
+    description: "Compiling Swift Module 'BoltAIMacUI' (4 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","BoltAIMacUI","-emit-dependencies","-emit-module","-emit-module-path","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/Modules/BoltAIMacUI.swiftmodule","-output-file-map","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/output-file-map.json","-whole-module-optimization","-num-threads","8","-c","@/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/BoltAIMacUI.build/sources","-I","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/Modules","-target","arm64-apple-macosx12.0","-O","-j8","-DSWIFT_PACKAGE","-module-cache-path","/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/release/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","BoltAIMacUI_main","-color-diagnostics","-swift-version","5","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/","/Users/wscholl/BoltAI/mac-ui/Package.swift","/Users/wscholl/BoltAI/mac-ui/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

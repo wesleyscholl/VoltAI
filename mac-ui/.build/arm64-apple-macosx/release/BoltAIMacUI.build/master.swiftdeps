@@ -1,0 +1,9 @@
+version: "Apple Swift version 6.0.3 (swiftlang-6.0.3.1.10 clang-1600.0.30.1)"
+options: "34a6a5ac9f2b0b31ee0ca7f21f4845d73fd1cbb62b1c360b0e732d17acd66064"
+build_start_time: [1758556892, 597591000]
+build_end_time: [1758556978, 691374000]
+inputs:
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAICaller.swift": [1758556363, 817231632]
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift": [1758556618, 404053043]
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/DropZone.swift": [1758556612, 393139584]
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/main.swift": [1758556757, 701253513]

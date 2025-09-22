@@ -1,0 +1,29 @@
+{
+  "": {
+    "swift-dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/master.swiftdeps"
+  },
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/BoltAICaller.swift": {
+    "dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/BoltAICaller.d",
+    "object": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/BoltAICaller.swift.o",
+    "swiftmodule": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/BoltAICaller~partial.swiftmodule",
+    "swift-dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/BoltAICaller.swiftdeps"
+  },
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/ContentView.swift": {
+    "dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/ContentView.d",
+    "object": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/ContentView.swift.o",
+    "swiftmodule": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/ContentView.swiftdeps"
+  },
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/DropZone.swift": {
+    "dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/DropZone.d",
+    "object": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/DropZone.swift.o",
+    "swiftmodule": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/DropZone~partial.swiftmodule",
+    "swift-dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/DropZone.swiftdeps"
+  },
+  "/Users/wscholl/BoltAI/mac-ui/Sources/BoltAIMacUI/main.swift": {
+    "dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/main.d",
+    "object": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/main.swift.o",
+    "swiftmodule": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/wscholl/BoltAI/mac-ui/.build/arm64-apple-macosx/debug/BoltAIMacUI.build/main.swiftdeps"
+  }
+}
