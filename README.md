@@ -10,21 +10,21 @@ Features
 Getting started
 
 1) Install Rust (if not installed):
-
+```bash
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
+```
 2) Build:
-
+```bash
    cargo build --release
-
+```
 3) Index a directory:
-
+```bash
    ./target/release/boltai index -d path/to/docs -o boltai_index.json
-
+```
 4) Query the index:
-
+```bash
    ./target/release/boltai query -i boltai_index.json -q "search terms" -k 5
-
+```
 Next steps
 
 - Replace TF-IDF vectorizer with embeddings from a local LLM (llama.cpp) for semantic search.
