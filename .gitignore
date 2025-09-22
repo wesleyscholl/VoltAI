@@ -1,3 +1,6 @@
 /target
 /boltai_index.json
 .DS_Store
+/mac-ui/BoltAI.app
+/mac-ui/.build
+/mac-ui/.DS_Store
