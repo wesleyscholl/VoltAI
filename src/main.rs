@@ -1,7 +1,10 @@
+// Clean single-file implementation: index (TF-IDF) + Ollama-first query
+// Overwrite with a clean, minimal implementation.
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
@@ -12,6 +15,8 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
+static WORD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[a-zA-Z0-9']+").unwrap());
+
 #[derive(Parser)]
 #[command(name = "BoltAI", about = "Fast local AI agent — MVP (TF-IDF based)")]
 struct Cli {
@@ -21,107 +26,67 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Index a directory of text files into a local JSON index
     Index {
-        /// Directory to index
         #[arg(short, long)]
         dir: PathBuf,
-
-        /// Output index file
         #[arg(short, long, default_value = "boltai_index.json")]
         out: PathBuf,
     },
-    /// Query the index for similar documents
     Query {
-        /// Index file created by `index` command
         #[arg(short, long, default_value = "boltai_index.json")]
         index: PathBuf,
-
-        /// Query string
         #[arg(short, long)]
         q: String,
-
-        /// Number of results
-        #[arg(short, long, default_value_t = 5)]
+        #[arg(short, long, default_value_t = 3)]
         k: usize,
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Doc {
     id: String,
     path: String,
     text: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Index {
     docs: Vec<Doc>,
     terms: Vec<String>,
-    vectors: Vec<Vec<f32>>, // tf-idf vectors aligned with docs
+    vectors: Vec<Vec<f32>>,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Commands::Index { dir, out } => {
-            index_dir(&dir, &out)?;
-        }
-        Commands::Query { index, q, k } => {
-            query_index(&index, &q, k)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn read_text_file(path: &Path) -> Result<String> {
-    let file = File::open(path)?;
+fn read_text_file(p: &Path) -> Result<String> {
     let mut s = String::new();
-    let mut rdr = BufReader::new(file);
-    rdr.read_to_string(&mut s)?;
+    let mut f = File::open(p)?;
+    f.read_to_string(&mut s)?;
     Ok(s)
 }
 
-fn collect_text_files(dir: &Path) -> Vec<PathBuf> {
-    WalkDir::new(dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            if let Some(ext) = e.path().extension() {
-                let ex = ext.to_string_lossy().to_lowercase();
-                return ex == "txt" || ex == "md" || ex == "text" || ex == "csv" || ex == "json";
-            }
-            false
-        })
-        .map(|e| e.into_path())
+fn tokenize(s: &str) -> Vec<String> {
+    WORD_RE
+        .find_iter(s)
+        .map(|m| m.as_str().to_lowercase())
         .collect()
 }
 
-fn tokenize(text: &str) -> Vec<String> {
-    // simple tokenizer: lowercase, split on word characters, remove stopwords
-    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\w+").unwrap());
-    let stop: HashSet<&'static str> = ["the", "and", "is", "in", "to", "of", "a", "for", "on", "with", "that", "this"].iter().cloned().collect();
-
-    RE.find_iter(text)
-        .map(|m| m.as_str().to_lowercase())
-        .filter(|t| !stop.contains(t.as_str()))
-        .collect()
+fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
 fn index_dir(dir: &Path, out: &Path) -> Result<()> {
-    if !dir.is_dir() {
-        return Err(anyhow!("{} is not a directory", dir.display()));
-    }
+    let mut files: Vec<PathBuf> = WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.path().to_path_buf())
+        .collect();
 
-    let files = collect_text_files(dir);
-    println!("Found {} files to index", files.len());
+    files.sort();
 
     let pb = ProgressBar::new(files.len() as u64);
     pb.set_style(
-        ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")?
+        ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] {wide_bar} {pos}/{len} {msg}")?
             .progress_chars("=>-"),
     );
 
@@ -141,7 +106,6 @@ fn index_dir(dir: &Path, out: &Path) -> Result<()> {
 
     pb.finish_with_message("indexing files");
 
-    // build vocabulary
     let mut df: HashMap<String, usize> = HashMap::new();
     let mut docs_tokens: Vec<Vec<String>> = Vec::with_capacity(docs.len());
 
@@ -164,7 +128,6 @@ fn index_dir(dir: &Path, out: &Path) -> Result<()> {
 
     let term_index: HashMap<&String, usize> = terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
 
-    // compute tf-idf vectors
     let vectors: Vec<Vec<f32>> = docs_tokens
         .par_iter()
         .map(|toks| {
@@ -177,15 +140,12 @@ fn index_dir(dir: &Path, out: &Path) -> Result<()> {
             let mut vec: Vec<f32> = vec![0.0; terms.len()];
             for (i, &count) in tf.iter() {
                 let tfv = 1.0 + count.log2();
-                // idf approximated by position popularity (higher index => less common)
-                // For simplicity compute idf as log(N / (1 + df)) later; but we don't have df map now.
                 vec[*i] = tfv;
             }
             vec
         })
         .collect();
 
-    // normalize vectors
     let vectors_normed: Vec<Vec<f32>> = vectors
         .into_par_iter()
         .map(|mut v| {
@@ -209,44 +169,70 @@ fn index_dir(dir: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
-}
+fn query_with_ollama(index_file: &Path, q: &str, k: usize) -> Result<()> {
+    let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| String::from("mistral"));
 
-fn query_index(index_file: &Path, q: &str, k: usize) -> Result<()> {
-    if !index_file.exists() {
-        return Err(anyhow!("index file {} does not exist", index_file.display()));
-    }
-    let f = File::open(index_file)?;
-    let idx: Index = serde_json::from_reader(f)?;
+    let mut prompt = q.to_string();
+    if index_file.exists() {
+        let f = File::open(index_file)?;
+        let idx: Index = serde_json::from_reader(f)?;
 
-    let q_toks = tokenize(q);
-    let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
-    let term_map: HashMap<&String, usize> = idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
-    for t in q_toks.iter() {
-        if let Some(&i) = term_map.get(t) {
-            q_vec[i] += 1.0;
+        if !idx.terms.is_empty() && !idx.vectors.is_empty() {
+            let q_toks = tokenize(q);
+            let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
+            let term_map: HashMap<&String, usize> = idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+            for t in q_toks.iter() {
+                if let Some(&i) = term_map.get(t) {
+                    q_vec[i] += 1.0;
+                }
+            }
+            let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
+            for x in q_vec.iter_mut() {
+                *x /= norm;
+            }
+
+            let mut sims: Vec<(usize, f32)> = idx
+                .vectors
+                .iter()
+                .enumerate()
+                .map(|(i, v)| (i, cosine_sim(&q_vec, v)))
+                .collect();
+
+            sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let mut context = String::new();
+            for (i, _score) in sims.into_iter().take(k) {
+                let doc = &idx.docs[i];
+                context.push_str(&format!("Document: {}\n{}\n---\n", doc.path, doc.text));
+            }
+
+            if !context.is_empty() {
+                prompt = format!("Use the following documents as context:\n{}\nQuestion: {}", context, q);
+            }
         }
     }
-    let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-    for x in q_vec.iter_mut() {
-        *x /= norm;
+
+    let output = Command::new("ollama").arg("run").arg(&model).arg(&prompt).output();
+    match output {
+        Ok(o) => {
+            if o.status.success() {
+                let s = String::from_utf8_lossy(&o.stdout);
+                print!("{}", s);
+                Ok(())
+            } else {
+                let serr = String::from_utf8_lossy(&o.stderr);
+                Err(anyhow!("ollama failed: {}", serr))
+            }
+        }
+        Err(e) => Err(anyhow!("failed to invoke ollama: {}", e)),
     }
+}
 
-    let mut sims: Vec<(usize, f32)> = idx
-        .vectors
-        .iter()
-        .enumerate()
-        .map(|(i, v)| (i, cosine_sim(&q_vec, v)))
-        .collect();
-
-    sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-    println!("Top {} results for query: {}", k, q);
-    for (i, score) in sims.into_iter().take(k) {
-        let doc = &idx.docs[i];
-        println!("[{:.4}] {} — {}", score, doc.id, doc.path);
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Index { dir, out } => index_dir(&dir, &out)?,
+        Commands::Query { index, q, k } => query_with_ollama(&index, &q, k)?,
     }
-
     Ok(())
 }

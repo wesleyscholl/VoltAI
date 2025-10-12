@@ -8,13 +8,13 @@ This is a minimal native macOS SwiftUI app that acts as a front-end to the `bolt
 
 Build & run (Xcode)
 1) Open the folder in Xcode: File -> Open and pick `Package.swift`.
-2) Build & Run the `BoltAIMacUI` target.
+2) Build & Run the `BoltAI` target.
 
 Build & run (SwiftPM)
 ```
 cd mac-ui
 swift build
-swift run BoltAIMacUI
+swift run BoltAI
 ```
 
 Notes

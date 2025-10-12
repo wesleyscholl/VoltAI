@@ -7,4 +7,4 @@ package:
 	./scripts/package_and_open.sh
 
 run-app:
-	open BoltAIMacUI.app
+	open BoltAI.app

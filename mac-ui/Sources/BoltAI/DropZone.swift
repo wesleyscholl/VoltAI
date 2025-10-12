@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DropZone: NSViewRepresentable {
     var onDrop: ([URL]) -> Void

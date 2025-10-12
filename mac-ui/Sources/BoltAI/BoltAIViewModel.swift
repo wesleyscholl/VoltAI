@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import AppKit
 
 final class BoltAIViewModel: ObservableObject {
     @Published var messages: [ChatMessage] = [ChatMessage(role: "system", text: "BoltAI local agent ready.")]
@@ -10,25 +11,72 @@ final class BoltAIViewModel: ObservableObject {
     @Published var progressMessage: String = ""
     @Published var indexedDocs: [Doc] = []
     @Published var selectedDoc: Doc? = nil
+    @Published var lastError: String? = nil
+    @Published var isLoading: Bool = false
+    @Published var statusText: String = ""
 
     private var currentTask: Task<Void, Never>? = nil
 
     func sendQuery() {
         let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
+        // Debug: log user query append
+        fputs("[BoltAIViewModel] Appending user message: \(q)\n", stderr)
         messages.append(ChatMessage(role: "user", text: q))
         input = ""
+        isLoading = true
+        statusText = "Thinking..."
 
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [q] in
+            await MainActor.run { self.statusText = "Generating response..." }
+            // Call the synchronous BoltAICaller which returns stdout or an error string
             let res = BoltAICaller.query(index: URL(fileURLWithPath: "boltai_index.json"), q: q, k: 5)
-            await MainActor.run {
-                self.messages.append(ChatMessage(role: "assistant", text: res))
+            // debug: log raw response (may include process exit and stderr info)
+            fputs("[BoltAIViewModel] Raw response: \(res.prefix(200))\n", stderr)
+
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                // If the response indicates a missing index, don't show repeated alerts; instead provide
+                // a helpful fallback response so the app works out-of-the-box.
+                let lower = res.lowercased()
+                let isMissingIndex = lower.contains("index file") || lower.contains("does not exist")
+                if isMissingIndex {
+                    // Fallback: give the user a helpful message and echo their question so UI remains useful
+                    let fallback = "I don't have any indexed documents yet. To get document-aware answers, open the Index tab and add files. Meanwhile, here's your question echoed: \(q)"
+                    self.messages.append(ChatMessage(role: "assistant", text: fallback))
+                    // Do not set lastError for missing index; keep lastError for other, actionable errors
+                } else {
+                    self.messages.append(ChatMessage(role: "assistant", text: res))
+                }
+                self.statusText = ""
+                self.isLoading = false
             }
         }
     }
 
     func index(paths: [URL]) {
-        guard !paths.isEmpty else { return }
+        // If no paths provided, fall back to a sensible default (./docs)
+        let pathsToIndex: [URL]
+        if paths.isEmpty {
+            let fallback = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("docs")
+            // If the fallback docs folder doesn't exist, surface an error to the UI and abort
+            if !FileManager.default.fileExists(atPath: fallback.path) {
+                // Create an empty index file so the UI has something to load and queries can run (returning helpful fallback answers)
+                let outURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("boltai_index.json")
+                let emptyIndex = Index(docs: [], terms: [], vectors: [])
+                if let data = try? JSONEncoder().encode(emptyIndex) {
+                    try? data.write(to: outURL)
+                    fputs("[BoltAIViewModel] wrote empty index to \(outURL.path)\n", stderr)
+                } else {
+                    DispatchQueue.main.async { self.lastError = "Could not create fallback empty index at \(outURL.path)" }
+                    return
+                }
+            }
+            pathsToIndex = [fallback]
+        } else {
+            pathsToIndex = paths
+        }
+
         isIndexing = true
         progress = 0.0
         progressMessage = "Preparing to index..."
@@ -36,8 +84,8 @@ final class BoltAIViewModel: ObservableObject {
 
         currentTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            let total = paths.count
-            for (i, p) in paths.enumerated() {
+            let total = pathsToIndex.count
+            for (i, p) in pathsToIndex.enumerated() {
                 if Task.isCancelled { break }
                 await MainActor.run { self.progressMessage = "Indexing \(p.lastPathComponent)" }
                 _ = BoltAICaller.index(dir: p, out: URL(fileURLWithPath: "boltai_index.json"))

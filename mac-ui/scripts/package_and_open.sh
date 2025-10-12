@@ -28,30 +28,60 @@ if [ ! -x "$SWIFT_BIN" ]; then
 fi
 
 
-APP_DIR="$ROOT_DIR/BoltAIMacUI.app"
+APP_DIR="$ROOT_DIR/BoltAI.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 # Copy Swift executable as the app executable
-cp "$SWIFT_BIN" "$MACOS_DIR/BoltAIMacUI"
-chmod +x "$MACOS_DIR/BoltAIMacUI"
+cp "$SWIFT_BIN" "$MACOS_DIR/BoltAI"
+chmod +x "$MACOS_DIR/BoltAI"
 
 # Copy boltai binary into the app bundle
 cp "$RUST_BIN" "$MACOS_DIR/boltai"
 chmod +x "$MACOS_DIR/boltai"
 
-# Ensure an AppIcon exists (1x1 PNG placeholder) - decode from embedded base64 if missing
-ICON_PATH="$RESOURCES_DIR/AppIcon.png"
-if [ ! -f "$ICON_PATH" ]; then
-  echo "Creating placeholder AppIcon.png"
-  cat > "$ICON_PATH" <<'PNGBASE64'
-iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn4B9xqVQYAAAAASUVORK5CYII=
-PNGBASE64
-  base64 --decode "$ICON_PATH" > "$ICON_PATH.tmp" || (cat "$ICON_PATH" | base64 --decode > "$ICON_PATH.tmp")
-  mv "$ICON_PATH.tmp" "$ICON_PATH"
+# Verify the app executable is the Swift UI binary (not the Rust CLI). If a previous run
+# accidentally overwrote the app executable with the Rust binary, detect by checksum and
+# correct it automatically (or fail if we can't).
+SWIFT_SHA=$(shasum -a 256 "$SWIFT_BIN" | awk '{print $1}')
+RUST_SHA=$(shasum -a 256 "$RUST_BIN" | awk '{print $1}')
+APP_EXEC="$MACOS_DIR/BoltAI"
+APP_SHA=$(shasum -a 256 "$APP_EXEC" | awk '{print $1}') || APP_SHA=""
+
+if [ "$APP_SHA" = "$RUST_SHA" ]; then
+  echo "Detected Rust CLI in place of app executable — fixing by copying Swift executable into bundle"
+  cp "$SWIFT_BIN" "$APP_EXEC"
+  chmod +x "$APP_EXEC"
+  APP_SHA=$(shasum -a 256 "$APP_EXEC" | awk '{print $1}') || APP_SHA=""
 fi
+
+if [ "$APP_SHA" != "$SWIFT_SHA" ]; then
+  echo "ERROR: app executable checksum does not match Swift build. Expected $SWIFT_SHA, got $APP_SHA"
+  echo "Please re-run the build or inspect $APP_EXEC"
+  exit 1
+fi
+
+# generate iconset from Resources/AppIcon.png (if present)
+# SRC="$ROOT_DIR/Resources/AppIcon.png"
+# ICONSET="$ROOT_DIR/AppIcon.iconset"
+# if [ -f "$SRC" ]; then
+#   rm -rf "$ICONSET"
+#   mkdir -p "$ICONSET"
+#   sips -z 16 16   "$SRC" --out "$ICONSET/icon_16x16.png"
+#   sips -z 32 32   "$SRC" --out "$ICONSET/icon_16x16@2x.png"
+#   sips -z 32 32   "$SRC" --out "$ICONSET/icon_32x32.png"
+#   sips -z 64 64   "$SRC" --out "$ICONSET/icon_32x32@2x.png"
+#   sips -z 128 128 "$SRC" --out "$ICONSET/icon_128x128.png"
+#   sips -z 256 256 "$SRC" --out "$ICONSET/icon_128x128@2x.png"
+#   sips -z 256 256 "$SRC" --out "$ICONSET/icon_256x256.png"
+#   sips -z 512 512 "$SRC" --out "$ICONSET/icon_256x256@2x.png"
+#   sips -z 512 512 "$SRC" --out "$ICONSET/icon_512x512.png"
+#   sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png"
+#   iconutil -c icns "$ICONSET" -o "$ROOT_DIR/Resources/AppIcon.icns"
+#   cp mac-ui/AppIcon.icns mac-ui/BoltAI.app/Contents/Resources/AppIcon.icns || true
+# fi
 
 # Create a minimal Info.plist for the app
 INFO_PLIST="$CONTENTS_DIR/Info.plist"
@@ -61,7 +91,7 @@ cat > "$INFO_PLIST" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>BoltAIMacUI</string>
+  <string>BoltAI</string>
   <key>CFBundleDisplayName</key>
   <string>BoltAI</string>
   <key>CFBundleIdentifier</key>
@@ -69,11 +99,11 @@ cat > "$INFO_PLIST" <<'PLIST'
   <key>CFBundleVersion</key>
   <string>0.1</string>
   <key>CFBundleExecutable</key>
-  <string>BoltAIMacUI</string>
+  <string>BoltAI</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
-  <string>AppIcon.png</string>
+  <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
 </dict>
