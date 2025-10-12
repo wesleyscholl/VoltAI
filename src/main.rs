@@ -75,10 +75,20 @@ fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
 }
 
 fn index_dir(dir: &Path, out: &Path) -> Result<()> {
+    // Only index common textual file types to avoid capturing binary files (git internals, images,
+    // compiled artifacts) which can produce oversized or invalid JSON output.
+    let allowed_exts = ["txt", "md", "csv", "json"];
     let mut files: Vec<PathBuf> = WalkDir::new(dir)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|ext| allowed_exts.contains(&ext))
+                .unwrap_or(false)
+        })
         .map(|e| e.path().to_path_buf())
         .collect();
 

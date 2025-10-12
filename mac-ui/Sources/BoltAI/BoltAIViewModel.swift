@@ -29,8 +29,9 @@ final class BoltAIViewModel: ObservableObject {
 
         Task.detached(priority: .userInitiated) { [q] in
             await MainActor.run { self.statusText = "Generating response..." }
-            // Call the synchronous BoltAICaller which returns stdout or an error string
-            let res = BoltAICaller.query(index: URL(fileURLWithPath: "boltai_index.json"), q: q, k: 5)
+            // Call the asynchronous BoltAICaller which returns stdout or an error string
+            let indexPath = FileManager.default.currentDirectoryPath + "/../boltai_index.json"
+            let res = await BoltAICaller.query(index: URL(fileURLWithPath: indexPath), q: q, k: 5)
             // debug: log raw response (may include process exit and stderr info)
             fputs("[BoltAIViewModel] Raw response: \(res.prefix(200))\n", stderr)
 
@@ -58,11 +59,11 @@ final class BoltAIViewModel: ObservableObject {
         // If no paths provided, fall back to a sensible default (./docs)
         let pathsToIndex: [URL]
         if paths.isEmpty {
-            let fallback = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("docs")
+            let fallback = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../docs")
             // If the fallback docs folder doesn't exist, surface an error to the UI and abort
             if !FileManager.default.fileExists(atPath: fallback.path) {
                 // Create an empty index file so the UI has something to load and queries can run (returning helpful fallback answers)
-                let outURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("boltai_index.json")
+                let outURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../boltai_index.json")
                 let emptyIndex = Index(docs: [], terms: [], vectors: [])
                 if let data = try? JSONEncoder().encode(emptyIndex) {
                     try? data.write(to: outURL)
@@ -88,7 +89,8 @@ final class BoltAIViewModel: ObservableObject {
             for (i, p) in pathsToIndex.enumerated() {
                 if Task.isCancelled { break }
                 await MainActor.run { self.progressMessage = "Indexing \(p.lastPathComponent)" }
-                _ = BoltAICaller.index(dir: p, out: URL(fileURLWithPath: "boltai_index.json"))
+                let outPath = FileManager.default.currentDirectoryPath + "/../boltai_index.json"
+                _ = await BoltAICaller.index(dir: p, out: URL(fileURLWithPath: outPath))
                 // increment progress
                 await MainActor.run {
                     self.progress = Double(i + 1) / Double(max(1, total))
@@ -99,7 +101,7 @@ final class BoltAIViewModel: ObservableObject {
             if !Task.isCancelled {
                 // nothing placeholder removed; will load index file after loop
                 // best-effort: try to read our index
-                let f = FileManager.default.currentDirectoryPath + "/boltai_index.json"
+                let f = FileManager.default.currentDirectoryPath + "/../boltai_index.json"
                 if FileManager.default.fileExists(atPath: f) {
                     if let data = try? Data(contentsOf: URL(fileURLWithPath: f)), let index = try? JSONDecoder().decode(Index.self, from: data) {
                         await MainActor.run {

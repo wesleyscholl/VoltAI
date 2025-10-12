@@ -1,51 +1,58 @@
 import Foundation
 
 enum BoltAICaller {
-    static func runProcess(launchPath: String, arguments: [String]) -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: launchPath)
-        p.arguments = arguments
+    static func runProcessAsync(launchPath: String, arguments: [String]) async -> String {
+        await withCheckedContinuation { continuation in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: launchPath)
+            p.arguments = arguments
 
-        let out = Pipe()
-        let err = Pipe()
-        p.standardOutput = out
-        p.standardError = err
+            let out = Pipe()
+            let err = Pipe()
+            p.standardOutput = out
+            p.standardError = err
 
-        do {
-            try p.run()
-        } catch {
-            return "failed to run: \(error)"
-        }
-        p.waitUntilExit()
-
-        let outData = out.fileHandleForReading.readDataToEndOfFile()
-        let errData = err.fileHandleForReading.readDataToEndOfFile()
-        let stdout = String(data: outData, encoding: .utf8) ?? ""
-        let stderr = String(data: errData, encoding: .utf8) ?? ""
-
-        // If stdout is empty but stderr has content, return stderr so caller can see errors
-        if stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            var msg = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            if msg.isEmpty {
-                msg = "(no output)"
+            do {
+                try p.run()
+            } catch {
+                continuation.resume(returning: "failed to run: \(error)")
+                return
             }
-            let code = p.terminationStatus
-            return "[process exit \(code)] \(msg)"
+
+            // Use a background queue to wait for the process without blocking the main thread
+            DispatchQueue.global(qos: .userInitiated).async {
+                p.waitUntilExit()
+
+                let outData = out.fileHandleForReading.readDataToEndOfFile()
+                let errData = err.fileHandleForReading.readDataToEndOfFile()
+                let stdout = String(data: outData, encoding: .utf8) ?? ""
+                let stderr = String(data: errData, encoding: .utf8) ?? ""
+
+                // If stdout is empty but stderr has content, return stderr so caller can see errors
+                if stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    var msg = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if msg.isEmpty {
+                        msg = "(no output)"
+                    }
+                    let code = p.terminationStatus
+                    continuation.resume(returning: "[process exit \(code)] \(msg)")
+                } else {
+                    continuation.resume(returning: stdout)
+                }
+            }
         }
-
-        return stdout
     }
 
-    static func index(dir: URL, out: URL) -> String {
+    static func index(dir: URL, out: URL) async -> String {
         let binary = locateBoltAIBinary()
         fputs("[BoltAICaller] launching binary: \(binary)\n", stderr)
-        return runProcess(launchPath: binary, arguments: ["index", "-d", dir.path, "-o", out.path])
+        return await runProcessAsync(launchPath: binary, arguments: ["index", "-d", dir.path, "-o", out.path])
     }
 
-    static func query(index: URL, q: String, k: Int) -> String {
+    static func query(index: URL, q: String, k: Int) async -> String {
         let binary = locateBoltAIBinary()
         fputs("[BoltAICaller] launching binary: \(binary)\n", stderr)
-        return runProcess(launchPath: binary, arguments: ["query", "-i", index.path, "-q", q, "-k", String(k)])
+        return await runProcessAsync(launchPath: binary, arguments: ["query", "-i", index.path, "-q", q, "-k", String(k)])
     }
 
     // Try a few reasonable locations for the boltai binary so the UI can find it during development

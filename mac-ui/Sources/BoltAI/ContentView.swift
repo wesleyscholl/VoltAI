@@ -51,31 +51,48 @@ struct ContentView: View {
     }
 
     var homeView: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             // Add top padding inside each tab content to visually move the tab bar down
             Spacer().frame(height: 8)
-            HStack(alignment: .center) {
-                LogoView()
-                    .padding(.trailing, 8)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("BoltAI")
-                        .font(.system(size: 34, weight: .bold))
-                    Text("Fast local AI agent — TF‑IDF powered")
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Button(action: { selection = 1 }) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Index Documents")
-                            .fontWeight(.semibold)
+
+            // Header section with improved spacing
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 16) {
+                    LogoView()
+                        .padding(.trailing, 4)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("BoltAI")
+                            .font(.system(size: 34, weight: .bold))
+                            // White text color for better contrast
+                            .foregroundColor(.white)
+                        Text("Fast local AI agent — Powered by Rust & TF-IDF")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 15))
                     }
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 14)
+                    Spacer()
+                    Button(action: { selection = 1 }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Index Documents")
+                                .fontWeight(.semibold)
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 14)
+                        .foregroundColor(.white)
+                        .background(LinearGradient(gradient: Gradient(colors: [Color(red: 0.11, green: 0.56, blue: 0.8), Color(red: 0.18, green: 0.7, blue: 0.45)]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .cornerRadius(10)
+                        .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .scaleEffect(selection == 1 ? 0.98 : 1.0)
+                    .animation(.spring(response: 0.2, dampingFraction: 0.8), value: selection)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(NSColor.separatorColor).opacity(0.3))
+                    .frame(height: 1)
             }
+            .padding(.horizontal, 4)
 
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(NSColor.controlBackgroundColor))
@@ -126,13 +143,19 @@ struct ContentView: View {
                                 HStack {
                                     TextField(vm.isLoading ? "Processing..." : "Ask BoltAI...", text: $vm.input)
                                         .textFieldStyle(.plain)
-                                        .padding(10)
+                                        .padding(12)
                                         .background(Color(NSColor.textBackgroundColor))
-                                        .cornerRadius(10)
+                                        .cornerRadius(12)
                                         .onSubmit { vm.sendQuery() }
                                         .disabled(vm.isLoading)
+                                        .font(.system(size: 14))
                                 }
                                 .padding(.leading, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color(NSColor.textBackgroundColor))
+                                        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                                )
 
                                 Button(action: { vm.sendQuery() }) {
                                     ZStack {
@@ -141,16 +164,20 @@ struct ContentView: View {
                                         } else {
                                             Image(systemName: "paperplane.fill")
                                                 .foregroundColor(.white)
+                                                .font(.system(size: 16, weight: .semibold))
                                         }
                                     }
-                                    .padding(12)
+                                    .padding(14)
                                     .background(LinearGradient(gradient: Gradient(colors: [Color(red: 0.11, green: 0.56, blue: 0.8), Color(red: 0.18, green: 0.7, blue: 0.45)]), startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .cornerRadius(10)
+                                    .cornerRadius(12)
+                                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(vm.isLoading)
+                                .scaleEffect(vm.isLoading ? 0.95 : 1.0)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: vm.isLoading)
                             }
-                            .padding(10)
+                            .padding(12)
                         }
                     }
                     .padding()
@@ -166,8 +193,35 @@ struct ContentView: View {
         HStack(spacing: 16) {
             Spacer().frame(height: 8)
             VStack(spacing: 12) {
-                DropZone { paths in
-                    Task { vm.index(paths: paths) }
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color(red: 0.11, green: 0.56, blue: 0.8).opacity(0.3), lineWidth: 2)
+                                .padding(1)
+                        )
+                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
+
+                    VStack(spacing: 12) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 32, weight: .light))
+                            .foregroundColor(Color(red: 0.11, green: 0.56, blue: 0.8))
+
+                        Text("Drop documents here to index")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+
+                        Text("or click to select files")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+
+                    DropZone { paths in
+                        Task { vm.index(paths: paths) }
+                    }
+                    .frame(height: 160)
                 }
                 .frame(height: 160)
 
@@ -175,8 +229,13 @@ struct ContentView: View {
                     Button(action: { Task { vm.index(paths: []) } }) {
                         Label("Rebuild Index", systemImage: "arrow.clockwise")
                             .frame(minWidth: 140)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .foregroundColor(Color(red: 0.11, green: 0.56, blue: 0.8))
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                            .cornerRadius(8)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
 
                     Button(action: {
                         // Open a folder chooser and index the selected folder
@@ -191,32 +250,56 @@ struct ContentView: View {
                     }) {
                         Label("Index Folder…", systemImage: "folder")
                             .frame(minWidth: 140)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .foregroundColor(.white)
+                            .background(LinearGradient(gradient: Gradient(colors: [Color(red: 0.11, green: 0.56, blue: 0.8), Color(red: 0.18, green: 0.7, blue: 0.45)]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .cornerRadius(8)
+                            .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
                 }
 
                 Divider()
 
                 Text("Indexed Documents")
-                    .font(.headline)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.white)
 
                 if vm.indexedDocs.isEmpty {
-                    Text("No documents indexed yet")
-                        .foregroundColor(.secondary)
+                    VStack(spacing: 12) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundColor(.secondary)
+                        Text("No documents indexed yet")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14))
+                    }
+                    .padding(.vertical, 20)
                 } else {
                     List {
                         ForEach(vm.indexedDocs) { doc in
-                            VStack(alignment: .leading) {
-                                Text(doc.path)
-                                    .font(.subheadline).bold()
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                        .foregroundColor(Color(red: 0.11, green: 0.56, blue: 0.8))
+                                        .font(.system(size: 14))
+                                    Text(doc.path)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .lineLimit(1)
+                                }
                                 Text(doc.text)
-                                    .font(.caption)
+                                    .font(.system(size: 12))
                                     .foregroundColor(.secondary)
+                                    .lineLimit(2)
                             }
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 4)
                         }
                     }
                     .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
                 }
 
                 Spacer()
@@ -227,26 +310,64 @@ struct ContentView: View {
     }
 
     var settingsView: some View {
-        Form {
-            Spacer().frame(height: 6)
-            Section(header: Text("General")) {
-                Toggle("Enable background indexing", isOn: .constant(true))
-                Picker("Theme", selection: .constant(0)) {
-                    Text("System").tag(0)
-                    Text("Light").tag(1)
-                    Text("Dark").tag(2)
-                }
-            }
+        ScrollView {
+            VStack(spacing: 32) {
+                Spacer().frame(height: 6)
 
-            Section(header: Text("Advanced")) {
-                Button("Open index file") {
-                    // reveal index JSON in Finder
-                    let indexURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("boltai_index.json")
-                    NSWorkspace.shared.activateFileViewerSelecting([indexURL])
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Settings")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .frame(height: 1)
+                        .opacity(0.3)
                 }
+                .padding(.horizontal, 20)
+
+                VStack(spacing: 24) {
+                    SectionView(title: "General", icon: "gear") {
+                        VStack(spacing: 16) {
+                            Toggle("Enable background indexing", isOn: .constant(true))
+                                .toggleStyle(SwitchToggleStyle(tint: Color(red: 0.11, green: 0.56, blue: 0.8)))
+
+                            Picker("Theme", selection: .constant(0)) {
+                                Text("System").tag(0)
+                                Text("Light").tag(1)
+                                Text("Dark").tag(2)
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
+                    SectionView(title: "Advanced", icon: "wrench.and.screwdriver") {
+                        Button(action: {
+                            // reveal index JSON in Finder
+                            let indexURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../boltai_index.json")
+                            NSWorkspace.shared.activateFileViewerSelecting([indexURL])
+                        }) {
+                            HStack {
+                                Image(systemName: "folder")
+                                Text("Open index file")
+                                Spacer()
+                                Image(systemName: "arrow.up.right")
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 20)
+
+                Spacer().frame(height: 20)
             }
         }
-        .padding(12)
     }
 }
 
@@ -255,22 +376,47 @@ struct MessageRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if msg.role == "user" {
-                Circle().fill(Color.blue).frame(width: 40, height: 40)
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(gradient: Gradient(colors: [Color(red: 0.11, green: 0.56, blue: 0.8), Color(red: 0.18, green: 0.7, blue: 0.45)]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 36, height: 36)
+                        .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 1)
+                    Image(systemName: "person.fill")
+                        .foregroundColor(.white)
+                        .font(.system(size: 16, weight: .medium))
+                }
             } else {
-                Circle().fill(Color.green).frame(width: 40, height: 40)
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(gradient: Gradient(colors: [Color(red: 0.18, green: 0.7, blue: 0.45), Color(red: 0.11, green: 0.56, blue: 0.8)]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 36, height: 36)
+                        .shadow(color: Color.black.opacity(0.15), radius: 3, x: 0, y: 1)
+                    Image(systemName: "bolt.fill")
+                        .foregroundColor(.white)
+                        .font(.system(size: 16, weight: .medium))
+                }
             }
             VStack(alignment: .leading, spacing: 6) {
                 Text(msg.role.capitalized)
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .fontWeight(.medium)
                 // Make message text selectable so users can copy answers
                 Text(msg.text)
                     .textSelection(.enabled)
-                    .padding(10)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(10)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(msg.role == "user" ?
+                                  LinearGradient(gradient: Gradient(colors: [Color(red: 0.11, green: 0.56, blue: 0.8).opacity(0.1), Color(red: 0.18, green: 0.7, blue: 0.45).opacity(0.1)]), startPoint: .topLeading, endPoint: .bottomTrailing) :
+                                  LinearGradient(gradient: Gradient(colors: [Color(NSColor.controlBackgroundColor), Color(NSColor.controlBackgroundColor)]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                    )
+                    .cornerRadius(16)
             }
+            Spacer()
         }
+        .padding(.horizontal, 4)
     }
 }
 
@@ -292,6 +438,45 @@ struct LogoView: View {
             Image(systemName: "bolt.fill")
                 .foregroundColor(.white)
                 .font(.system(size: 26, weight: .bold))
+        }
+    }
+}
+
+struct SectionView<Content: View>: View {
+    let title: String
+    let icon: String
+    let content: Content
+
+    init(title: String, icon: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.icon = icon
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(Color(red: 0.11, green: 0.56, blue: 0.8))
+                    .font(.system(size: 16, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                content
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
+                    )
+            )
+            .padding(.top, 4)
         }
     }
 }
