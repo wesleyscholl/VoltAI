@@ -157,6 +157,28 @@ struct ContentView: View {
                                         .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
                                 )
 
+                                // Paste from clipboard button
+                                Button(action: {
+                                    // Read plain string from the general pasteboard and append to input
+                                    if let clipboard = NSPasteboard.general.string(forType: .string) {
+                                        // Append with a newline if there's already content
+                                        if vm.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            vm.input = clipboard
+                                        } else {
+                                            vm.input += "\n" + clipboard
+                                        }
+                                    }
+                                }) {
+                                    Image(systemName: "doc.on.clipboard")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 14, weight: .semibold))
+                                }
+                                .buttonStyle(.plain)
+                                .padding(10)
+                                .background(Color.gray.opacity(0.25))
+                                .cornerRadius(10)
+                                .disabled(vm.isLoading)
+
                                 Button(action: { vm.sendQuery() }) {
                                     ZStack {
                                         if vm.isLoading {
