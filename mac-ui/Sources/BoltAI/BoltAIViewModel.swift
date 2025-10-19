@@ -28,8 +28,8 @@ final class BoltAIViewModel: ObservableObject {
                 self.availableModels = models
                 // If model list contains a fast gemma-like model prefer it
                 if self.selectedModel == nil {
-                    if models.contains("gemma3:1b") { self.selectedModel = "gemma3:1b" }
-                    else if models.contains("llama2:1b") { self.selectedModel = "llama2:1b" }
+                    if models.contains("llama2:1b") { self.selectedModel = "llama2:1b" }
+                    else if models.contains("gemma3:1b") { self.selectedModel = "gemma3:1b" }
                     else if models.contains("mistral:latest") { self.selectedModel = "mistral:latest" }
                 }
             }

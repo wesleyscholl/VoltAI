@@ -102,7 +102,7 @@ enum BoltAICaller {
     static func query(index: URL, q: String, k: Int) async -> String {
         let binary = locateBoltAIBinary()
         fputs("[BoltAICaller] launching binary: \(binary)\n", stderr)
-        return await runProcessAsync(launchPath: binary, arguments: ["query", "-i", index.path, "-q", q, "-k", String(k)], timeout: 120.0)
+        return await runProcessAsync(launchPath: binary, arguments: ["query", "-i", index.path, "-q", q, "-k", String(k)], timeout: 60.0)
     }
 
     static func query(index: URL, q: String, k: Int, model: String?) async -> String {
@@ -112,7 +112,7 @@ enum BoltAICaller {
         if let m = model, !m.isEmpty {
             args.append(contentsOf: ["-m", m])
         }
-        return await runProcessAsync(launchPath: binary, arguments: args, timeout: 120.0)
+        return await runProcessAsync(launchPath: binary, arguments: args, timeout: 60.0)
     }
 
     // Return a list of installed ollama models (names) by parsing `ollama list` output.

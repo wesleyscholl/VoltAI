@@ -16,71 +16,128 @@ Highlights
 - Desktop UI: macOS SwiftUI front-end for drag-and-drop indexing, chat-style queries, and document previews.
 - Privacy-first defaults: keeps file contents local and provides safeguards against accidentally printing full documents to the UI or logs.
 
-Quick start (developer)
------------------------
-Prerequisites
-- Rust + cargo: https://rustup.rs
-- (Optional) Xcode or macOS command line tools for the mac-ui
+ # BoltAI — Local fast AI agent (MVP)
 
-Build the CLI
+ BoltAI is a compact, local-first AI agent built as an MVP to demonstrate fast on-device document indexing, similarity search, and local LLM orchestration. It combines a Rust CLI (indexer & query helper) with a macOS SwiftUI desktop front-end for drag-and-drop indexing and chat-style queries.
 
-```bash
-# from the repo root
-cargo build --release
+ This repository is ideal for showcasing systems, privacy-first design, and end-to-end local AI pipelines on your portfolio site.
 
-# the resulting binary is at `target/release/boltai`
-```
+ ## Live demo (locally)
 
-Index a folder
+ - Drag-and-drop a folder of documents into the `mac-ui` app. The app launches the Rust indexer and produces `boltai_index.json`.
+ - Ask questions in the chat UI (or use the CLI) to summarize, search, or reason over the indexed documents.
 
-```bash
-./target/release/boltai index -d /path/to/docs -o boltai_index.json
-```
+ ## Portfolio blurb (short)
 
-Run a query
+ BoltAI — a lightning-fast, Rust-powered local AI assistant for secure, offline document search and summarization. Built for developers and researchers who need private, low-latency AI on their workstation. ⚡🤖🔒
 
-```bash
-./target/release/boltai query -i boltai_index.json -q "summarize the indexed documents" -k 5
-```
+ ## Why I built BoltAI
 
-Run the macOS UI
+ - Demonstrate a practical, privacy-first approach to integrating local LLMs and retrieval pipelines.
+ - Showcase engineering trade-offs: TF-IDF for speed & simplicity, with an easy migration path to embeddings & vector stores.
+ - Provide a foundation for offline-first tools that can be extended into production-quality desktop agents.
 
-```bash
-cd mac-ui
-swift run
-# or build in Xcode for development
-```
+ ## Key features
 
-Project structure
------------------
-- `src/` — Rust CLI implementation (indexing, query prompting, PDF extraction)
-- `mac-ui/` — macOS SwiftUI front-end, drop-to-index UI, and chat interface
-- `boltai_index.json` — typical output index file produced by the CLI
+ - Local TF-IDF indexer (Rust) — fast multithreaded indexing of plain text and PDFs
+ - Query CLI — simple commands for search, summarization, and diagnostic output
+ - macOS SwiftUI front-end — drag/drop indexing, chat-style interface, and previewed document snippets
+ - PDF extraction support and safety measures to avoid dumping raw documents in prompts or UI
 
-Security and privacy notes
---------------------------
-BoltAI is intentionally local-first. The UI and CLI avoid printing full raw documents into model prompts or to UI fallbacks to reduce the risk of accidental data leakage. If you connect an external LLM or remote service, review its configuration and network policy to maintain privacy.
+ ## Quickstart
 
-Roadmap / extension ideas
--------------------------
-1) Embeddings + local LLM
-   - Add an embeddings pipeline (llama.cpp, Ollama, or a local API) and store vectors for semantic search.
-2) Vector DB
-   - Integrate Qdrant or an SQLite-backed vector store for scale and persistence.
-3) Two-pass summarization
-   - Extract top-k snippets, then run an abstractive summarizer for robust paraphrase results.
-4) CI / packaging
-   - Build Homebrew formula or macOS app packaging for easy installs.
+ ### Prerequisites
 
-For portfolio use
------------------
-If you want to showcase BoltAI on your portfolio (https://wesleyscholl.github.io/) I can:
+ - Rust (install via rustup)
+ - macOS command line tools (for SwiftUI front-end)
 
-- Add a concise one-line summary for the project page.
-- Create a short demo GIF (screen recording) showing drag-drop indexing and a sample chat summarize flow.
-- Export a minimal `README.md` blurb suitable for a GitHub project card.
+ ### Build the CLI
 
-Contact / credits
------------------
-Built by Wesley Scholl. Code and contributions welcome — open an issue or PR.
+ ```bash
+ # From repository root
+ cargo build --release
+
+ # Binary: target/release/boltai
+ ```
+
+ ### Index a directory
+
+ ```bash
+ ./target/release/boltai index -d /path/to/docs -o boltai_index.json
+ ```
+
+ ### Query the index
+
+ ```bash
+ ./target/release/boltai query -i boltai_index.json -q "summarize the indexed documents" -k 5
+ ```
+
+ ### Run the macOS UI (development)
+
+ ```bash
+ cd mac-ui
+ swift run
+ # or open in Xcode to run the app target and inspect the UI
+ ```
+
+ ## Example output (CLI)
+
+ After indexing, `boltai query` returns top-k similar documents and a short summary. Example (truncated):
+
+ ```
+ Top 3 results:
+ 1) docs/architecture.md (score: 0.87)
+      Excerpt: "BoltAI is designed to be local-first..."
+ 2) docs/notes.pdf (score: 0.72)
+      Excerpt: "Local LLM integration enables..."
+
+ AI summary:
+ BoltAI demonstrates a privacy-first local retrieval pipeline that indexes developer documentation and supports fast summarization and search. It uses TF-IDF for initial vectorization and provides clear extension points for embeddings and LLM-based abstraction.
+ ```
+
+ ## Project architecture
+
+ - Rust CLI (`src/main.rs`): walks directories, extracts text (including PDFs), computes TF-IDF vectors, and writes `boltai_index.json`.
+ - mac-ui SwiftUI: orchestrates indexing runs, loads a capped preview of index docs (to avoid huge JSON parsing on the main thread), and sends queries to the CLI.
+ - Extensibility: The CLI prompt layer is isolated to make it easy to swap the query strategy (keywords → embeddings → hybrid retrieval-augmented generation).
+
+ ## Design decisions & trade-offs
+
+ - TF-IDF first: fast to compute, explainable, and sufficient for small-to-medium corpora. Replacing TF-IDF with dense embeddings is an intended next step for semantic search.
+ - Local-first: prioritizes data privacy and low-latency responses at the expense of requiring local compute resources.
+ - Safety: the UI and CLI avoid including full raw documents in prompts and no longer print raw text as a fallback. The project logs prompts to a local debug file for reproducible tuning.
+
+ ## Roadmap & extension ideas
+
+ ### Short term
+ - Add optional embeddings pipeline (llama.cpp, Ollama) and store vectors for semantic search.
+ - Implement a two-stage summarization (extract top-k snippets then abstractive summarize).
+
+ ### Medium term
+ - Add Qdrant or SQLite-backed vector store for scale.
+ - Add Homebrew packaging and an installer for easier distribution.
+
+ ### Long term
+ - Provide offline LLM support with a bundled lightweight model for extraction and compression.
+ - Add user profiles and fine-grained privacy controls for teams.
+
+ ## Notes for portfolio presentation
+
+ - Suggested one-line project card:
+    - BoltAI — lightning-fast local AI agent for secure offline document search & summarization ⚡🤖🔒
+ - Suggested short demo steps for a GIF/snippet:
+    1) Drag a small project folder with 5–8 markdown files into the UI.
+    2) Wait for indexing to complete (show progress bar).  
+    3) Type: "summarize the indexed documents" and show the resulting summary.
+ - Assets to include on the portfolio page:
+    - 240–480px GIF (3–8s) showing drag-drop → index → summary.
+    - One-line blurb + link to the GitHub repo.
+
+ ## Contributing
+
+ Contributions are welcome. If you plan to extend BoltAI, open an issue describing the change and submit a pull request with tests where appropriate.
+
+ ## License & credits
+
+ MIT licensed. Built by Wesley Scholl.
 
