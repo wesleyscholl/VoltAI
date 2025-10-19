@@ -3,6 +3,10 @@
 
 BoltAI is a compact, local-first AI agent implemented in Rust with a companion macOS SwiftUI front-end (mac-ui). It demonstrates a practical, privacy-respecting information retrieval and local-LLM orchestration workflow suitable for developer tooling, research workflows, and offline indexing use-cases.
 
+## Demo
+
+https://github.com/user-attachments/assets/13a717a6-e4c8-41d6-b478-1a544ddcc5a9
+
 Why this project
 -----------------
 - Local-first: keeps data on your machine — no cloud upload by default. Ideal for sensitive documents and private datasets.
