@@ -5,7 +5,7 @@ BoltAI is a compact, local-first AI agent implemented in Rust with a companion m
 
 ## Demo
 
-https://github.com/user-attachments/assets/13a717a6-e4c8-41d6-b478-1a544ddcc5a9
+![DemoForBoltAI](https://github.com/user-attachments/assets/03a24efc-f34d-4490-beb7-59b1e01cde14)
 
 Why this project
 -----------------
