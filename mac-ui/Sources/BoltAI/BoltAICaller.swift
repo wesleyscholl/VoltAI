@@ -1,43 +1,92 @@
 import Foundation
+import Darwin
 
 enum BoltAICaller {
-    static func runProcessAsync(launchPath: String, arguments: [String]) async -> String {
+    static func runProcessAsync(launchPath: String, arguments: [String], timeout: TimeInterval = 600.0) async -> String {
         await withCheckedContinuation { continuation in
             let p = Process()
             p.executableURL = URL(fileURLWithPath: launchPath)
             p.arguments = arguments
 
-            let out = Pipe()
-            let err = Pipe()
-            p.standardOutput = out
-            p.standardError = err
+            // Redirect stdout/stderr to temporary files to avoid pipe buffer deadlocks
+            let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            let outURL = tmpDir.appendingPathComponent("boltai-out-\(UUID().uuidString).log")
+            let errURL = tmpDir.appendingPathComponent("boltai-err-\(UUID().uuidString).log")
+            FileManager.default.createFile(atPath: outURL.path, contents: nil, attributes: nil)
+            FileManager.default.createFile(atPath: errURL.path, contents: nil, attributes: nil)
+            let outHandleWrite = try? FileHandle(forWritingTo: outURL)
+            let errHandleWrite = try? FileHandle(forWritingTo: errURL)
+            if let o = outHandleWrite { p.standardOutput = o }
+            if let e = errHandleWrite { p.standardError = e }
+
+            var resumed = false
+            let resumeQueue = DispatchQueue(label: "BoltAICaller.safeResume")
+            let safeResume: @Sendable (String) -> Void = { s in
+                resumeQueue.sync {
+                    if !resumed {
+                        resumed = true
+                        continuation.resume(returning: s)
+                    }
+                }
+            }
 
             do {
+                fputs("[BoltAICaller] runProcess: starting \(launchPath) args=\(arguments)\n", stderr)
                 try p.run()
+                fputs("[BoltAICaller] runProcess: started pid=\(p.processIdentifier)\n", stderr)
             } catch {
-                continuation.resume(returning: "failed to run: \(error)")
+                safeResume("failed to run: \(error)")
                 return
             }
 
-            // Use a background queue to wait for the process without blocking the main thread
-            DispatchQueue.global(qos: .userInitiated).async {
-                p.waitUntilExit()
+            // schedule timeout: attempt graceful terminate, then escalate to kill
+            let timeoutWorkItem = DispatchWorkItem {
+                if p.isRunning {
+                    // attempt graceful termination
+                    fputs("[BoltAICaller] runProcess: timeout reached, terminating pid=\(p.processIdentifier)\n", stderr)
+                    p.terminate()
+                    // schedule kill after short grace period
+                    let pidToKill = p.processIdentifier
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+                        if p.isRunning {
+                            // force-kill via POSIX kill
+                            fputs("[BoltAICaller] runProcess: force-killing pid=\(pidToKill)\n", stderr)
+                            kill(pidToKill, SIGKILL)
+                        }
+                    }
+                }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
 
-                let outData = out.fileHandleForReading.readDataToEndOfFile()
-                let errData = err.fileHandleForReading.readDataToEndOfFile()
+            p.terminationHandler = { proc in
+                // cancel timeout work if still pending
+                timeoutWorkItem.cancel()
+
+                fputs("[BoltAICaller] runProcess: terminationHandler called pid=\(proc.processIdentifier) status=\(proc.terminationStatus)\n", stderr)
+
+                // Close write handles so file contents are flushed
+                if let o = outHandleWrite { try? o.close() }
+                if let e = errHandleWrite { try? e.close() }
+                // Read files
+                let outData = (try? Data(contentsOf: outURL)) ?? Data()
+                let errData = (try? Data(contentsOf: errURL)) ?? Data()
                 let stdout = String(data: outData, encoding: .utf8) ?? ""
                 let stderr = String(data: errData, encoding: .utf8) ?? ""
+                // cleanup temp files
+                try? FileManager.default.removeItem(at: outURL)
+                try? FileManager.default.removeItem(at: errURL)
 
-                // If stdout is empty but stderr has content, return stderr so caller can see errors
                 if stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     var msg = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if msg.isEmpty {
-                        msg = "(no output)"
+                    if msg.isEmpty { msg = "(no output)" }
+                    let code = proc.terminationStatus
+                    if code == 15 || code == 9 { // SIGTERM or SIGKILL
+                        safeResume("[timeout] Process timed out after \(timeout) seconds")
+                    } else {
+                        safeResume("[process exit \(code)] \(msg)")
                     }
-                    let code = p.terminationStatus
-                    continuation.resume(returning: "[process exit \(code)] \(msg)")
                 } else {
-                    continuation.resume(returning: stdout)
+                    safeResume(stdout)
                 }
             }
         }
@@ -46,13 +95,57 @@ enum BoltAICaller {
     static func index(dir: URL, out: URL) async -> String {
         let binary = locateBoltAIBinary()
         fputs("[BoltAICaller] launching binary: \(binary)\n", stderr)
-        return await runProcessAsync(launchPath: binary, arguments: ["index", "-d", dir.path, "-o", out.path])
+        // Indexing can take a while for large folders; give a long timeout (10 minutes)
+        return await runProcessAsync(launchPath: binary, arguments: ["index", "-d", dir.path, "-o", out.path], timeout: 600.0)
     }
 
     static func query(index: URL, q: String, k: Int) async -> String {
         let binary = locateBoltAIBinary()
         fputs("[BoltAICaller] launching binary: \(binary)\n", stderr)
-        return await runProcessAsync(launchPath: binary, arguments: ["query", "-i", index.path, "-q", q, "-k", String(k)])
+        return await runProcessAsync(launchPath: binary, arguments: ["query", "-i", index.path, "-q", q, "-k", String(k)], timeout: 120.0)
+    }
+
+    static func query(index: URL, q: String, k: Int, model: String?) async -> String {
+        let binary = locateBoltAIBinary()
+        fputs("[BoltAICaller] launching binary: \(binary) (model: \(model ?? "auto"))\n", stderr)
+        var args = ["query", "-i", index.path, "-q", q, "-k", String(k)]
+        if let m = model, !m.isEmpty {
+            args.append(contentsOf: ["-m", m])
+        }
+        return await runProcessAsync(launchPath: binary, arguments: args, timeout: 120.0)
+    }
+
+    // Return a list of installed ollama models (names) by parsing `ollama list` output.
+    static func listOllamaModels() async -> [String] {
+        // Try to run `ollama list` synchronously but off the main thread
+        return await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/local/bin/ollama")
+                p.arguments = ["list"]
+                let out = Pipe()
+                p.standardOutput = out
+                do {
+                    try p.run()
+                    p.waitUntilExit()
+                    let outData = out.fileHandleForReading.readDataToEndOfFile()
+                    let s = String(data: outData, encoding: .utf8) ?? ""
+                    var models: [String] = []
+                    for line in s.split(separator: "\n") {
+                        let parts = line.split(separator: " ").map({ String($0) })
+                        if parts.count > 0 {
+                            let name = parts[0]
+                            // skip header lines or empty
+                            if name.lowercased() == "name" { continue }
+                            models.append(name)
+                        }
+                    }
+                    cont.resume(returning: models)
+                } catch {
+                    cont.resume(returning: [])
+                }
+            }
+        }
     }
 
     // Try a few reasonable locations for the boltai binary so the UI can find it during development

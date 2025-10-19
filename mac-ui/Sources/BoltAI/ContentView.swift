@@ -212,7 +212,7 @@ struct ContentView: View {
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.primary)
 
-                        Text("or click to select files")
+                        Text("Supports .txt, .md, .csv, .json, .pdf files")
                             .font(.system(size: 14))
                             .foregroundColor(.secondary)
                     }
@@ -236,6 +236,7 @@ struct ContentView: View {
                             .cornerRadius(8)
                     }
                     .buttonStyle(.plain)
+                    .disabled(vm.isIndexing)
 
                     Button(action: {
                         // Open a folder chooser and index the selected folder
@@ -258,6 +259,19 @@ struct ContentView: View {
                             .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
+                    .disabled(vm.isIndexing)
+                }
+
+                if vm.isIndexing {
+                    VStack(spacing: 8) {
+                        ProgressView(vm.progressMessage, value: vm.progress, total: 1.0)
+                            .progressViewStyle(.linear)
+                            .tint(Color(red: 0.11, green: 0.56, blue: 0.8))
+                        Text(vm.progressMessage)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
                 }
 
                 Divider()
@@ -274,8 +288,19 @@ struct ContentView: View {
                         Text("No documents indexed yet")
                             .foregroundColor(.secondary)
                             .font(.system(size: 14))
+                        Text("Drop a folder or files (.txt, .md, .csv, .json, .pdf) to get started")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 12))
                     }
                     .padding(.vertical, 20)
+                    if !vm.isIndexing && vm.lastError == nil {
+                        Button("Open index file for inspection") {
+                            let indexURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().appendingPathComponent("boltai_index.json")
+                            NSWorkspace.shared.activateFileViewerSelecting([indexURL])
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
                 } else {
                     List {
                         ForEach(vm.indexedDocs) { doc in
@@ -284,9 +309,9 @@ struct ContentView: View {
                                     Image(systemName: "doc.text")
                                         .foregroundColor(Color(red: 0.11, green: 0.56, blue: 0.8))
                                         .font(.system(size: 14))
-                                    Text(doc.path)
-                                        .font(.system(size: 14, weight: .medium))
-                                        .lineLimit(1)
+                    Text(URL(fileURLWithPath: doc.path).lastPathComponent)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(1)
                                 }
                                 Text(doc.text)
                                     .font(.system(size: 12))
@@ -339,6 +364,32 @@ struct ContentView: View {
                             }
                             .pickerStyle(.menu)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+
+                    SectionView(title: "Model", icon: "brain") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("Ollama model")
+                                Spacer()
+                                Picker("Model", selection: $vm.selectedModel) {
+                                    Text("(auto)").tag(nil as String?)
+                                    ForEach(vm.availableModels, id: \ .self) { m in
+                                        Text(m).tag(Optional(m))
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .frame(width: 200)
+                            }
+                            Button("Refresh models") {
+                                Task {
+                                    let models = await BoltAICaller.listOllamaModels()
+                                    await MainActor.run {
+                                        vm.availableModels = models
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
