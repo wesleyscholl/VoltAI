@@ -125,18 +125,6 @@ Highlights
  - Provide offline LLM support with a bundled lightweight model for extraction and compression.
  - Add user profiles and fine-grained privacy controls for teams.
 
- ## Notes for portfolio presentation
-
- - Suggested one-line project card:
-    - BoltAI — lightning-fast local AI agent for secure offline document search & summarization ⚡🤖🔒
- - Suggested short demo steps for a GIF/snippet:
-    1) Drag a small project folder with 5–8 markdown files into the UI.
-    2) Wait for indexing to complete (show progress bar).  
-    3) Type: "summarize the indexed documents" and show the resulting summary.
- - Assets to include on the portfolio page:
-    - 240–480px GIF (3–8s) showing drag-drop → index → summary.
-    - One-line blurb + link to the GitHub repo.
-
  ## Contributing
 
  Contributions are welcome. If you plan to extend BoltAI, open an issue describing the change and submit a pull request with tests where appropriate.
