@@ -4,7 +4,7 @@
 use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -53,14 +53,14 @@ pub fn extract_entities_from_text(text: &str) -> Result<Vec<Entity>> {
     let mut entities = Vec::new();
     
     // Track seen entities to avoid duplicates
-    let mut seen: HashMap<String, bool> = HashMap::new();
+    let mut seen: HashSet<String> = HashSet::new();
     
     // Extract emails
     for cap in EMAIL_PATTERN.captures_iter(text) {
         if let Some(m) = cap.get(1) {
             let word = m.as_str().to_string();
-            if !seen.contains_key(&word) {
-                seen.insert(word.clone(), true);
+            if !seen.contains(&word) {
+                seen.insert(word.clone());
                 entities.push(Entity {
                     word,
                     label: "EMAIL".to_string(),
@@ -76,8 +76,8 @@ pub fn extract_entities_from_text(text: &str) -> Result<Vec<Entity>> {
     for cap in DATE_PATTERN.captures_iter(text) {
         if let Some(m) = cap.get(0) {
             let word = m.as_str().to_string();
-            if !seen.contains_key(&word) {
-                seen.insert(word.clone(), true);
+            if !seen.contains(&word) {
+                seen.insert(word.clone());
                 entities.push(Entity {
                     word,
                     label: "DATE".to_string(),
@@ -93,8 +93,8 @@ pub fn extract_entities_from_text(text: &str) -> Result<Vec<Entity>> {
     for cap in MONEY_PATTERN.captures_iter(text) {
         if let Some(m) = cap.get(0) {
             let word = m.as_str().to_string();
-            if !seen.contains_key(&word) {
-                seen.insert(word.clone(), true);
+            if !seen.contains(&word) {
+                seen.insert(word.clone());
                 entities.push(Entity {
                     word,
                     label: "MONEY".to_string(),
@@ -110,8 +110,8 @@ pub fn extract_entities_from_text(text: &str) -> Result<Vec<Entity>> {
     for cap in LOCATION_PATTERN.captures_iter(text) {
         if let Some(m) = cap.get(1) {
             let word = m.as_str().to_string();
-            if !seen.contains_key(&word) {
-                seen.insert(word.clone(), true);
+            if !seen.contains(&word) {
+                seen.insert(word.clone());
                 entities.push(Entity {
                     word,
                     label: "LOCATION".to_string(),
@@ -127,8 +127,8 @@ pub fn extract_entities_from_text(text: &str) -> Result<Vec<Entity>> {
     for cap in ORGANIZATION_PATTERN.captures_iter(text) {
         if let Some(m) = cap.get(1) {
             let word = m.as_str().to_string();
-            if !seen.contains_key(&word) {
-                seen.insert(word.clone(), true);
+            if !seen.contains(&word) {
+                seen.insert(word.clone());
                 entities.push(Entity {
                     word,
                     label: "ORGANIZATION".to_string(),
@@ -148,8 +148,8 @@ pub fn extract_entities_from_text(text: &str) -> Result<Vec<Entity>> {
             if !word.contains("Inc") && !word.contains("Corp") && 
                !word.contains("LLC") && !word.contains("Ltd") &&
                !word.contains("University") && !word.contains("College") &&
-               !seen.contains_key(&word) {
-                seen.insert(word.clone(), true);
+               !seen.contains(&word) {
+                seen.insert(word.clone());
                 entities.push(Entity {
                     word,
                     label: "PERSON".to_string(),

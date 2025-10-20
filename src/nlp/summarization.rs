@@ -22,7 +22,7 @@ static STOP_WORDS: Lazy<std::collections::HashSet<&'static str>> = Lazy::new(|| 
     [
         "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
         "has", "he", "in", "is", "it", "its", "of", "on", "that", "the",
-        "to", "was", "will", "with", "the", "this", "but", "they", "have",
+        "to", "was", "will", "with", "this", "but", "they", "have",
         "had", "what", "when", "where", "who", "which", "why", "how"
     ].iter().copied().collect()
 });
