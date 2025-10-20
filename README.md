@@ -41,6 +41,10 @@ BoltAI is a compact, local-first AI agent implemented in Rust with a companion m
  - Query CLI — simple commands for search, summarization, and diagnostic output
  - macOS SwiftUI front-end — drag/drop indexing, chat-style interface, and previewed document snippets
  - PDF extraction support and safety measures to avoid dumping raw documents in prompts or UI
+ - **NLP capabilities** — Named Entity Recognition, Sentiment Analysis, and Text Summarization
+   - Pattern-based NER for extracting names, locations, organizations, dates, emails, and monetary values
+   - Lexicon-based sentiment analysis (positive, neutral, negative)
+   - Extractive text summarization using sentence scoring
 
  ## Quickstart
 
@@ -78,6 +82,49 @@ BoltAI is a compact, local-first AI agent implemented in Rust with a companion m
  # or open in Xcode to run the app target and inspect the UI
  ```
 
+ ### Use NLP features
+
+ #### Named Entity Recognition (NER)
+
+ Extract entities like names, locations, organizations, dates, emails, and monetary values from text:
+
+ ```bash
+ # Analyze a single file
+ ./target/release/boltai ner -i document.txt
+
+ # Analyze all files in a directory
+ ./target/release/boltai ner -i /path/to/docs
+
+ # Save results to a file
+ ./target/release/boltai ner -i document.txt -o entities.txt
+ ```
+
+ #### Sentiment Analysis
+
+ Determine sentiment (positive, neutral, or negative) of text:
+
+ ```bash
+ # Analyze a single file
+ ./target/release/boltai sentiment -i review.txt
+
+ # Batch analyze multiple files
+ ./target/release/boltai sentiment -i /path/to/reviews -o sentiment_results.txt
+ ```
+
+ #### Text Summarization
+
+ Generate extractive summaries of documents:
+
+ ```bash
+ # Summarize a single file
+ ./target/release/boltai summarize -i article.txt
+
+ # Summarize multiple files in a directory
+ ./target/release/boltai summarize -i /path/to/articles -o summaries.txt
+ ```
+
+ **Supported file formats**: `.txt`, `.md`, `.csv`, `.json`, `.pdf`
+
  ## Example output (CLI)
 
  After indexing, `boltai query` returns top-k similar documents and a short summary. Example (truncated):
@@ -93,15 +140,45 @@ BoltAI is a compact, local-first AI agent implemented in Rust with a companion m
  BoltAI demonstrates a privacy-first local retrieval pipeline that indexes developer documentation and supports fast summarization and search. It uses TF-IDF for initial vectorization and provides clear extension points for embeddings and LLM-based abstraction.
  ```
 
+ ### NLP Feature Examples
+
+ **Named Entity Recognition output:**
+ ```
+ Named Entities found in document.txt:
+   - John Smith (PERSON): score 0.750
+   - john.smith@example.com (EMAIL): score 0.950
+   - New York (LOCATION): score 0.850
+   - Microsoft Corporation (ORGANIZATION): score 0.800
+   - $150,000 (MONEY): score 0.900
+   - Jan 15, 2024 (DATE): score 0.900
+ ```
+
+ **Sentiment Analysis output:**
+ ```
+ Sentiment analysis for review.txt:
+   - Label: Positive, Score: 0.857
+ ```
+
+ **Text Summarization output:**
+ ```
+ Summary of article.txt:
+ Artificial intelligence has become one of the most transformative technologies. 
+ Deep learning has achieved remarkable breakthroughs in computer vision and natural 
+ language processing. Machine learning algorithms optimize trading strategies and 
+ detect fraudulent transactions.
+ ```
+
  ## Project architecture
 
  - Rust CLI (`src/main.rs`): walks directories, extracts text (including PDFs), computes TF-IDF vectors, and writes `boltai_index.json`.
+ - NLP module (`src/nlp/`): provides pattern-based NER, lexicon-based sentiment analysis, and extractive text summarization.
  - mac-ui SwiftUI: orchestrates indexing runs, loads a capped preview of index docs (to avoid huge JSON parsing on the main thread), and sends queries to the CLI.
- - Extensibility: The CLI prompt layer is isolated to make it easy to swap the query strategy (keywords → embeddings → hybrid retrieval-augmented generation).
+ - Extensibility: The CLI prompt layer is isolated to make it easy to swap the query strategy (keywords → embeddings → hybrid retrieval-augmented generation). NLP features use lightweight rule-based approaches but can be upgraded to ML models (rust-bert) when libtorch is available.
 
  ## Design decisions & trade-offs
 
  - TF-IDF first: fast to compute, explainable, and sufficient for small-to-medium corpora. Replacing TF-IDF with dense embeddings is an intended next step for semantic search.
+ - Rule-based NLP: Uses regex patterns and lexicons for NER and sentiment analysis. Fast, no external dependencies, but less accurate than ML models. Can be upgraded to rust-bert/transformers when libtorch is available in the environment.
  - Local-first: prioritizes data privacy and low-latency responses at the expense of requiring local compute resources.
  - Safety: the UI and CLI avoid including full raw documents in prompts and no longer print raw text as a fallback. The project logs prompts to a local debug file for reproducible tuning.
 

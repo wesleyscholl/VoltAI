@@ -15,6 +15,8 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
+mod nlp;
+
 static WORD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[a-zA-Z0-9']+").unwrap());
 
 #[derive(Parser)]
@@ -42,6 +44,27 @@ enum Commands {
         /// Optional Ollama model override (e.g. gemma3:4b). If omitted the app will probe for a fast model.
         #[arg(short = 'm', long = "model")]
         model: Option<String>,
+    },
+    /// Extract named entities from text files
+    Ner {
+        #[arg(short, long, help = "Input file path or directory")]
+        input: PathBuf,
+        #[arg(short, long, help = "Output file for results (optional)")]
+        output: Option<PathBuf>,
+    },
+    /// Analyze sentiment of text files
+    Sentiment {
+        #[arg(short, long, help = "Input file path or directory")]
+        input: PathBuf,
+        #[arg(short, long, help = "Output file for results (optional)")]
+        output: Option<PathBuf>,
+    },
+    /// Summarize text from files
+    Summarize {
+        #[arg(short, long, help = "Input file path or directory")]
+        input: PathBuf,
+        #[arg(short, long, help = "Output file for results (optional)")]
+        output: Option<PathBuf>,
     },
 }
 
@@ -403,11 +426,208 @@ fn query_with_ollama(index_file: &Path, q: &str, k: usize, model_override: Optio
     }
 }
 
+fn handle_ner(input: &Path, output: Option<&Path>) -> Result<()> {
+    use std::io::Write;
+    
+    if input.is_file() {
+        println!("Analyzing file: {}", input.display());
+        let entities = nlp::extract_entities(input)?;
+        
+        let mut result = format!("Named Entities found in {}:\n", input.display());
+        for entity in &entities {
+            result.push_str(&format!("  - {} ({}): score {:.3}\n", 
+                entity.word, entity.label, entity.score));
+        }
+        
+        if let Some(out_path) = output {
+            let mut file = File::create(out_path)?;
+            file.write_all(result.as_bytes())?;
+            println!("Results written to {}", out_path.display());
+        } else {
+            print!("{}", result);
+        }
+    } else if input.is_dir() {
+        let allowed_exts = ["txt", "md", "csv", "json", "pdf"];
+        let files: Vec<PathBuf> = WalkDir::new(input)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|ext| allowed_exts.contains(&ext))
+                    .unwrap_or(false)
+            })
+            .map(|e| e.path().to_path_buf())
+            .collect();
+        
+        let mut all_results = String::new();
+        for file_path in files {
+            println!("Analyzing: {}", file_path.display());
+            match nlp::extract_entities(&file_path) {
+                Ok(entities) => {
+                    all_results.push_str(&format!("\nFile: {}\n", file_path.display()));
+                    for entity in &entities {
+                        all_results.push_str(&format!("  - {} ({}): score {:.3}\n", 
+                            entity.word, entity.label, entity.score));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error processing {}: {}", file_path.display(), e);
+                }
+            }
+        }
+        
+        if let Some(out_path) = output {
+            let mut file = File::create(out_path)?;
+            file.write_all(all_results.as_bytes())?;
+            println!("Results written to {}", out_path.display());
+        } else {
+            print!("{}", all_results);
+        }
+    } else {
+        return Err(anyhow!("Input path does not exist or is not a file/directory"));
+    }
+    
+    Ok(())
+}
+
+fn handle_sentiment(input: &Path, output: Option<&Path>) -> Result<()> {
+    use std::io::Write;
+    
+    if input.is_file() {
+        println!("Analyzing sentiment of file: {}", input.display());
+        let sentiments = nlp::analyze_sentiment(input)?;
+        
+        let mut result = format!("Sentiment analysis for {}:\n", input.display());
+        for sentiment in &sentiments {
+            result.push_str(&format!("  - Label: {}, Score: {:.3}\n", 
+                sentiment.label, sentiment.score));
+        }
+        
+        if let Some(out_path) = output {
+            let mut file = File::create(out_path)?;
+            file.write_all(result.as_bytes())?;
+            println!("Results written to {}", out_path.display());
+        } else {
+            print!("{}", result);
+        }
+    } else if input.is_dir() {
+        let allowed_exts = ["txt", "md", "csv", "json", "pdf"];
+        let files: Vec<PathBuf> = WalkDir::new(input)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|ext| allowed_exts.contains(&ext))
+                    .unwrap_or(false)
+            })
+            .map(|e| e.path().to_path_buf())
+            .collect();
+        
+        let mut all_results = String::new();
+        for file_path in files {
+            println!("Analyzing: {}", file_path.display());
+            match nlp::analyze_sentiment(&file_path) {
+                Ok(sentiments) => {
+                    all_results.push_str(&format!("\nFile: {}\n", file_path.display()));
+                    for sentiment in &sentiments {
+                        all_results.push_str(&format!("  - Label: {}, Score: {:.3}\n", 
+                            sentiment.label, sentiment.score));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error processing {}: {}", file_path.display(), e);
+                }
+            }
+        }
+        
+        if let Some(out_path) = output {
+            let mut file = File::create(out_path)?;
+            file.write_all(all_results.as_bytes())?;
+            println!("Results written to {}", out_path.display());
+        } else {
+            print!("{}", all_results);
+        }
+    } else {
+        return Err(anyhow!("Input path does not exist or is not a file/directory"));
+    }
+    
+    Ok(())
+}
+
+fn handle_summarize(input: &Path, output: Option<&Path>) -> Result<()> {
+    use std::io::Write;
+    
+    if input.is_file() {
+        println!("Summarizing file: {}", input.display());
+        let summary = nlp::summarize_text(input)?;
+        
+        let result = format!("Summary of {}:\n{}\n", input.display(), summary);
+        
+        if let Some(out_path) = output {
+            let mut file = File::create(out_path)?;
+            file.write_all(result.as_bytes())?;
+            println!("Summary written to {}", out_path.display());
+        } else {
+            print!("{}", result);
+        }
+    } else if input.is_dir() {
+        let allowed_exts = ["txt", "md", "csv", "json", "pdf"];
+        let files: Vec<PathBuf> = WalkDir::new(input)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .map(|ext| allowed_exts.contains(&ext))
+                    .unwrap_or(false)
+            })
+            .map(|e| e.path().to_path_buf())
+            .collect();
+        
+        let mut all_results = String::new();
+        for file_path in files {
+            println!("Summarizing: {}", file_path.display());
+            match nlp::summarize_text(&file_path) {
+                Ok(summary) => {
+                    all_results.push_str(&format!("\nFile: {}\nSummary: {}\n", 
+                        file_path.display(), summary));
+                }
+                Err(e) => {
+                    eprintln!("Error processing {}: {}", file_path.display(), e);
+                }
+            }
+        }
+        
+        if let Some(out_path) = output {
+            let mut file = File::create(out_path)?;
+            file.write_all(all_results.as_bytes())?;
+            println!("Summaries written to {}", out_path.display());
+        } else {
+            print!("{}", all_results);
+        }
+    } else {
+        return Err(anyhow!("Input path does not exist or is not a file/directory"));
+    }
+    
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Index { dir, out } => index_dir(&dir, &out)?,
         Commands::Query { index, q, k, model } => query_with_ollama(&index, &q, k, model)?,
+        Commands::Ner { input, output } => handle_ner(&input, output.as_deref())?,
+        Commands::Sentiment { input, output } => handle_sentiment(&input, output.as_deref())?,
+        Commands::Summarize { input, output } => handle_summarize(&input, output.as_deref())?,
     }
     Ok(())
 }
