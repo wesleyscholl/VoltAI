@@ -26,6 +26,7 @@
 4. Get instant answers with source citations
 ---
 
+<a id="table-of-contents"></a>
 ## 📋 Table of Contents
 
 - [Demo](#demo)
@@ -47,9 +48,12 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
+- [Acknowledgments](#acknowledgments)
+- [Contact](#contact)
+- [Star History](#star-history)
 
 ---
-
+<a id="what-is-boltai"></a>
 ## 🤔 What is BoltAI?
 
 BoltAI is a compact, **local-first AI agent** implemented in Rust with a companion macOS SwiftUI front-end. It demonstrates a practical, privacy-respecting information retrieval and local-LLM orchestration workflow suitable for:
@@ -62,7 +66,7 @@ BoltAI is a compact, **local-first AI agent** implemented in Rust with a compani
 Unlike cloud-based AI tools, BoltAI keeps your data on your machine, making it ideal for sensitive documents, proprietary code, and private datasets.
 
 ---
-
+<a id="why-boltai"></a>
 ## 🎯 Why BoltAI?
 
 ### 🔐 Privacy-First
@@ -86,7 +90,7 @@ Unlike cloud-based AI tools, BoltAI keeps your data on your machine, making it i
 - **Chat-style interface**: Natural query experience
 
 ---
-
+<a id="features"></a>
 ## ✨ Features
 
 ### Core Functionality
@@ -104,7 +108,7 @@ Unlike cloud-based AI tools, BoltAI keeps your data on your machine, making it i
 - 🔄 **Extensibility Points**: Ready for embeddings and vector stores
 
 ---
-
+<a id="how-it-works"></a>
 ## 🔧 How It Works
 
 ```mermaid
@@ -135,11 +139,11 @@ graph LR
 4. **Summary Generation**: (Optional) Provides AI-generated summary using LLM
 
 ---
-
+<a id="installation"></a>
 ## 💻 Installation
-
+<a id="prerequisites"></a>
 ### Prerequisites
-
+<a id="prerequisites"></a>
 #### Required
 - **Rust**: 1.70.0 or later ([install via rustup](https://rustup.rs/))
 - **macOS**: For the SwiftUI front-end (CLI works on any platform)
@@ -195,9 +199,9 @@ open BoltAI.xcodeproj  # or open the workspace if using SPM
 ```
 
 ---
-
+<a id="usage"></a>
 ## 📖 Usage
-
+<a id="cli-usage"></a>
 ### CLI Usage
 
 #### Indexing Documents
@@ -269,7 +273,7 @@ BoltAI demonstrates a privacy-first local retrieval pipeline that indexes
 developer documentation and supports fast summarization. It uses TF-IDF for
 initial vectorization and provides clear extension points for embeddings.
 ```
-
+<a id="macos-ui-usage"></a>
 ### macOS UI Usage
 
 #### Getting Started
@@ -308,7 +312,7 @@ initial vectorization and provides clear extension points for embeddings.
 - `⌘Q`: Quit
 
 ---
-
+<a id="project-architecture"></a>
 ## 🏗️ Project Architecture
 
 ```
@@ -385,7 +389,7 @@ BoltAI/
 - Drag-and-drop support
 
 ---
-
+<a id="configuration"></a>
 ## ⚙️ Configuration
 
 ### CLI Configuration
@@ -425,7 +429,7 @@ export BOLTAI_CONFIG="$HOME/.config/boltai/config.toml"
 ```
 
 ---
-
+<a id="supported-file-formats"></a>
 ## 📄 Supported File Formats
 
 | Format | Extension | Extraction Method | Notes |
@@ -445,7 +449,7 @@ To add support for a new format:
 3. Update this README with the new format
 
 ---
-
+<a id="design-decisions--trade-offs"></a>
 ## 🎯 Design Decisions & Trade-offs
 
 ### TF-IDF vs. Embeddings
@@ -490,7 +494,7 @@ The project includes safeguards to prevent:
 All prompts are logged to a local debug file for tuning.
 
 ---
-
+<a id="roadmap"></a>
 ## 🗺️ Roadmap
 
 ### Short Term (Q1 2025)
@@ -518,7 +522,7 @@ All prompts are logged to a local debug file for tuning.
 - See [GitHub Issues](https://github.com/wesleyscholl/BoltAI/issues) for feature requests
 
 ---
-
+<a id="troubleshooting"></a>
 ## 🐛 Troubleshooting
 
 ### Common Issues
@@ -580,7 +584,7 @@ swift package resolve
    - Steps to reproduce
 
 ---
-
+<a id="contributing"></a>
 ## 🤝 Contributing
 
 Contributions are welcome! Whether it's bug fixes, new features, documentation improvements, or examples.
@@ -682,7 +686,7 @@ test: add integration tests for indexer
 - Help others learn and grow
 
 ---
-
+<a id="license"></a>
 ## 📜 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
@@ -694,7 +698,7 @@ Copyright (c) 2025 Wesley Scholl
 ```
 
 ---
-
+<a id="acknowledgments"></a>
 ## 🙏 Acknowledgments
 
 - **Rust Community**: For amazing crates like `rayon`, `serde`, and `clap`
@@ -702,7 +706,7 @@ Copyright (c) 2025 Wesley Scholl
 - **Early Testers**: For feedback and bug reports
 
 ---
-
+<a id="contact"></a>
 ## 📬 Contact
 
 **Wesley Scholl**
@@ -710,7 +714,7 @@ Copyright (c) 2025 Wesley Scholl
 - ORCID: [0009-0002-9108-3704](https://orcid.org/0009-0002-9108-3704)
 
 ---
-
+<a id="star-history"></a>
 ## ⭐ Star History
 
 If you find BoltAI useful, please consider starring the repository!
