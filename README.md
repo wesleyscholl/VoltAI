@@ -1,19 +1,19 @@
 
-# BoltAI — Local fast AI agent (MVP)
+# ⚡️🤖 BoltAI — Local fast AI agent
 
 BoltAI is a compact, local-first AI agent implemented in Rust with a companion macOS SwiftUI front-end (mac-ui). It demonstrates a practical, privacy-respecting information retrieval and local-LLM orchestration workflow suitable for developer tooling, research workflows, and offline indexing use-cases.
 
-## Demo
+## ▶️ Demo
 
 ![DemoForBoltAI](https://github.com/user-attachments/assets/03a24efc-f34d-4490-beb7-59b1e01cde14)
 
-Why this project
+👨🏻‍💻 Why this project
 -----------------
 - Local-first: keeps data on your machine — no cloud upload by default. Ideal for sensitive documents and private datasets.
 - Fast & lightweight: TF-IDF indexer with parallel processing (rayon) for quick indexing of developer repos and document collections.
 - Extensible: designed as an MVP scaffold to add embeddings, local LLMs (llama.cpp / Ollama), vector DBs (Qdrant), or hybrid pipelines.
 
-Highlights
+❇️ Highlights
 ----------
 - Indexing: recursive indexing of common formats (.txt, .md, .csv, .json, .pdf) into a compact JSON index.
 - Query CLI: run similarity search and quick queries against local indexes.
