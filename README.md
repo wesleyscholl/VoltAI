@@ -10,7 +10,7 @@
 
 **Lightning-fast, privacy-first AI assistant for secure, offline document search and summarization**
 
-[Features](#features) • [Demo](#demo) • [Installation](#installation) • [Usage](#usage) • [Architecture](#architecture) • [Contributing](#contributing)
+[Features](#features) • [Demo](#demo) • [Installation](#installation) • [Usage](#usage) • [Architecture](#🏗️-architecture) • [Contributing](#contributing)
 
 </div>
 
