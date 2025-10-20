@@ -20,12 +20,6 @@ Highlights
 - Desktop UI: macOS SwiftUI front-end for drag-and-drop indexing, chat-style queries, and document previews.
 - Privacy-first defaults: keeps file contents local and provides safeguards against accidentally printing full documents to the UI or logs.
 
- # BoltAI — Local fast AI agent (MVP)
-
- BoltAI is a compact, local-first AI agent built as an MVP to demonstrate fast on-device document indexing, similarity search, and local LLM orchestration. It combines a Rust CLI (indexer & query helper) with a macOS SwiftUI desktop front-end for drag-and-drop indexing and chat-style queries.
-
- This repository is ideal for showcasing systems, privacy-first design, and end-to-end local AI pipelines on your portfolio site.
-
  ## Live demo (locally)
 
  - Drag-and-drop a folder of documents into the `mac-ui` app. The app launches the Rust indexer and produces `boltai_index.json`.
