@@ -16,8 +16,9 @@
 
 <a id="demo"></a>
 ## 🎥 Demo
+![VoltDemo](https://github.com/user-attachments/assets/1f960f20-a86b-4b21-91bb-ce14c42fc70a)
 
-![DemoForVoltAI](https://github.com/user-attachments/assets/03a24efc-f34d-4490-beb7-59b1e01cde14)
+
 
 **Try it yourself:**
 1. Drag a folder of documents into the macOS UI
