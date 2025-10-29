@@ -1,11 +1,11 @@
 /target
-/boltai_index.json
+/voltai_index.json
 .DS_Store
-/mac-ui/BoltAI.app
+/mac-ui/VoltAI.app
 /mac-ui/.build
 /mac-ui/.DS_Store
-/mac-ui/BoltAIMacUI.app
-/mac-ui/boltai_index.json
+/mac-ui/VoltAIMacUI.app
+/mac-ui/voltai_index.json
  # Ignore potential Xcode/SwiftPM index DB files that are large binary blobs
  mac-ui/.build/**/index/db/**/data.mdb
  # Specific problematic file (ignore and remove if present)

@@ -18,7 +18,7 @@ use walkdir::WalkDir;
 static WORD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"[a-zA-Z0-9']+").unwrap());
 
 #[derive(Parser)]
-#[command(name = "BoltAI", about = "Fast local AI agent — MVP (TF-IDF based)")]
+#[command(name = "VoltAI", about = "Fast local AI agent — MVP (TF-IDF based)")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -29,11 +29,11 @@ enum Commands {
     Index {
         #[arg(short, long)]
         dir: PathBuf,
-        #[arg(short, long, default_value = "boltai_index.json")]
+        #[arg(short, long, default_value = "voltai_index.json")]
         out: PathBuf,
     },
     Query {
-        #[arg(short, long, default_value = "boltai_index.json")]
+        #[arg(short, long, default_value = "voltai_index.json")]
         index: PathBuf,
         #[arg(short, long)]
         q: String,
@@ -318,7 +318,7 @@ fn query_with_ollama(index_file: &Path, q: &str, k: usize, model_override: Optio
                         context
                     );
                     // Also write the prompt to a debug file for inspection
-                    if let Ok(mut dbgf) = File::create(std::path::Path::new("/tmp/boltai_last_prompt.txt")) {
+                    if let Ok(mut dbgf) = File::create(std::path::Path::new("/tmp/voltai_last_prompt.txt")) {
                         use std::io::Write;
                         let _ = dbgf.write_all(prompt.as_bytes());
                     }

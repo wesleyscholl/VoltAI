@@ -4,14 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 echo "Root: $ROOT_DIR"
 
-# Build Rust boltai
-echo "Building boltai (release)..."
+# Build Rust voltai
+echo "Building voltai (release)..."
 cd "$ROOT_DIR/.."
 cargo build --release
 
-RUST_BIN="$ROOT_DIR/../target/release/boltai"
+RUST_BIN="$ROOT_DIR/../target/release/voltai"
 if [ ! -x "$RUST_BIN" ]; then
-  echo "boltai binary not found at $RUST_BIN"
+  echo "voltai binary not found at $RUST_BIN"
   exit 1
 fi
 
@@ -21,33 +21,33 @@ cd "$ROOT_DIR"
 echo "Building mac UI (release)..."
 swift build -c release
 
-SWIFT_BIN=".build/release/BoltAI"
+SWIFT_BIN=".build/release/VoltAI"
 if [ ! -x "$SWIFT_BIN" ]; then
   echo "Swift executable not found at $SWIFT_BIN"
   exit 1
 fi
 
 
-APP_DIR="$ROOT_DIR/BoltAI.app"
+APP_DIR="$ROOT_DIR/VoltAI.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 # Copy Swift executable as the app executable
-cp "$SWIFT_BIN" "$MACOS_DIR/BoltAI"
-chmod +x "$MACOS_DIR/BoltAI"
+cp "$SWIFT_BIN" "$MACOS_DIR/VoltAI"
+chmod +x "$MACOS_DIR/VoltAI"
 
-# Copy boltai binary into the app bundle
-cp "$RUST_BIN" "$MACOS_DIR/boltai"
-chmod +x "$MACOS_DIR/boltai"
+# Copy voltai binary into the app bundle
+cp "$RUST_BIN" "$MACOS_DIR/voltai"
+chmod +x "$MACOS_DIR/voltai"
 
 # Verify the app executable is the Swift UI binary (not the Rust CLI). If a previous run
 # accidentally overwrote the app executable with the Rust binary, detect by checksum and
 # correct it automatically (or fail if we can't).
 SWIFT_SHA=$(shasum -a 256 "$SWIFT_BIN" | awk '{print $1}')
 RUST_SHA=$(shasum -a 256 "$RUST_BIN" | awk '{print $1}')
-APP_EXEC="$MACOS_DIR/BoltAI"
+APP_EXEC="$MACOS_DIR/VoltAI"
 APP_SHA=$(shasum -a 256 "$APP_EXEC" | awk '{print $1}') || APP_SHA=""
 
 if [ "$APP_SHA" = "$RUST_SHA" ]; then
@@ -80,7 +80,7 @@ fi
 #   sips -z 512 512 "$SRC" --out "$ICONSET/icon_512x512.png"
 #   sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png"
 #   iconutil -c icns "$ICONSET" -o "$ROOT_DIR/Resources/AppIcon.icns"
-#   cp mac-ui/AppIcon.icns mac-ui/BoltAI.app/Contents/Resources/AppIcon.icns || true
+#   cp mac-ui/AppIcon.icns mac-ui/VoltAI.app/Contents/Resources/AppIcon.icns || true
 # fi
 
 # Create a minimal Info.plist for the app
@@ -91,15 +91,15 @@ cat > "$INFO_PLIST" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>BoltAI</string>
+  <string>VoltAI</string>
   <key>CFBundleDisplayName</key>
-  <string>BoltAI</string>
+  <string>VoltAI</string>
   <key>CFBundleIdentifier</key>
-  <string>com.example.boltai</string>
+  <string>com.example.voltai</string>
   <key>CFBundleVersion</key>
   <string>0.1</string>
   <key>CFBundleExecutable</key>
-  <string>BoltAI</string>
+  <string>VoltAI</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>

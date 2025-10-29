@@ -1,5 +1,5 @@
 
-# ⚡️🤖 BoltAI — Fast Local-First AI Agent
+# ⚡️🤖 VoltAI — Fast Local-First AI Agent
 
 <div align="center">
 
@@ -17,11 +17,11 @@
 <a id="demo"></a>
 ## 🎥 Demo
 
-![DemoForBoltAI](https://github.com/user-attachments/assets/03a24efc-f34d-4490-beb7-59b1e01cde14)
+![DemoForVoltAI](https://github.com/user-attachments/assets/03a24efc-f34d-4490-beb7-59b1e01cde14)
 
 **Try it yourself:**
 1. Drag a folder of documents into the macOS UI
-2. BoltAI indexes files and creates `boltai_index.json`
+2. VoltAI indexes files and creates `voltai_index.json`
 3. Ask natural language questions in the chat interface
 4. Get instant answers with source citations
 ---
@@ -30,8 +30,8 @@
 ## 📋 Table of Contents
 
 - [Demo](#demo)
-- [What is BoltAI?](#what-is-boltai)
-- [Why BoltAI?](#why-boltai)
+- [What is VoltAI?](#what-is-voltai)
+- [Why VoltAI?](#why-voltai)
 - [Features](#features)
 - [How It Works](#how-it-works)
 - [Installation](#installation)
@@ -53,21 +53,21 @@
 - [Star History](#star-history)
 
 ---
-<a id="what-is-boltai"></a>
-## 🤔 What is BoltAI?
+<a id="what-is-voltai"></a>
+## 🤔 What is VoltAI?
 
-BoltAI is a compact, **local-first AI agent** implemented in Rust with a companion macOS SwiftUI front-end. It demonstrates a practical, privacy-respecting information retrieval and local-LLM orchestration workflow suitable for:
+VoltAI is a compact, **local-first AI agent** implemented in Rust with a companion macOS SwiftUI front-end. It demonstrates a practical, privacy-respecting information retrieval and local-LLM orchestration workflow suitable for:
 
 - 👨‍💻 Developer tooling and documentation indexing
 - 🔬 Research workflows and paper management
 - 📚 Offline knowledge base creation
 - 🔐 Private document analysis (data never leaves your machine)
 
-Unlike cloud-based AI tools, BoltAI keeps your data on your machine, making it ideal for sensitive documents, proprietary code, and private datasets.
+Unlike cloud-based AI tools, VoltAI keeps your data on your machine, making it ideal for sensitive documents, proprietary code, and private datasets.
 
 ---
-<a id="why-boltai"></a>
-## 🎯 Why BoltAI?
+<a id="why-voltai"></a>
+## 🎯 Why VoltAI?
 
 ### 🔐 Privacy-First
 - **Zero cloud uploads**: All data processing happens locally
@@ -130,7 +130,7 @@ graph LR
 1. **File Discovery**: Recursively walks directories, identifies supported formats
 2. **Text Extraction**: Extracts plain text (with PDF support via `lopdf` or similar)
 3. **TF-IDF Computation**: Calculates term frequency-inverse document frequency vectors
-4. **Index Creation**: Serializes vectors and metadata to `boltai_index.json`
+4. **Index Creation**: Serializes vectors and metadata to `voltai_index.json`
 
 ### Query Pipeline
 1. **Query Vectorization**: Converts user query to TF-IDF vector
@@ -157,13 +157,13 @@ graph LR
 
 ```bash
 # Clone the repository
-git clone https://github.com/wesleyscholl/BoltAI.git
-cd BoltAI
+git clone https://github.com/wesleyscholl/VoltAI.git
+cd VoltAI
 
 # Build the Rust CLI (release mode for optimal performance)
 cargo build --release
 
-# The binary will be at: target/release/boltai
+# The binary will be at: target/release/voltai
 ```
 
 #### Building the macOS UI
@@ -176,7 +176,7 @@ cd mac-ui
 swift run
 
 # Option 2: Open in Xcode
-open BoltAI.xcodeproj  # or open the workspace if using SPM
+open VoltAI.xcodeproj  # or open the workspace if using SPM
 # Then build and run (⌘R)
 ```
 
@@ -184,13 +184,13 @@ open BoltAI.xcodeproj  # or open the workspace if using SPM
 
 ```bash
 # Check the CLI is working
-./target/release/boltai --help
+./target/release/voltai --help
 
 # Should output:
-# BoltAI - Local AI Agent
+# VoltAI - Local AI Agent
 # 
 # USAGE:
-#     boltai <SUBCOMMAND>
+#     voltai <SUBCOMMAND>
 # 
 # SUBCOMMANDS:
 #     index    Index a directory of documents
@@ -208,12 +208,12 @@ open BoltAI.xcodeproj  # or open the workspace if using SPM
 
 ```bash
 # Basic indexing
-./target/release/boltai index \
+./target/release/voltai index \
   --directory /path/to/documents \
-  --output boltai_index.json
+  --output voltai_index.json
 
 # With options
-./target/release/boltai index \
+./target/release/voltai index \
   -d /path/to/documents \
   -o my_index.json \
   --exclude-pattern "*.tmp" \
@@ -223,7 +223,7 @@ open BoltAI.xcodeproj  # or open the workspace if using SPM
 
 **Options:**
 - `-d, --directory <PATH>`: Directory to index (required)
-- `-o, --output <FILE>`: Output index file (default: `boltai_index.json`)
+- `-o, --output <FILE>`: Output index file (default: `voltai_index.json`)
 - `--exclude-pattern <PATTERN>`: Glob pattern for files to skip
 - `--max-file-size <SIZE>`: Skip files larger than this
 - `-v, --verbose`: Enable detailed logging
@@ -232,14 +232,14 @@ open BoltAI.xcodeproj  # or open the workspace if using SPM
 
 ```bash
 # Basic query
-./target/release/boltai query \
-  --index boltai_index.json \
+./target/release/voltai query \
+  --index voltai_index.json \
   --query "summarize the architecture documentation" \
   --top-k 5
 
 # Interactive query mode
-./target/release/boltai query \
-  -i boltai_index.json \
+./target/release/voltai query \
+  -i voltai_index.json \
   --interactive
 ```
 
@@ -257,7 +257,7 @@ open BoltAI.xcodeproj  # or open the workspace if using SPM
 Top 3 results for: "architecture decisions"
 
 1. docs/architecture.md (score: 0.87)
-   Excerpt: "BoltAI is designed to be local-first, with extensibility
+   Excerpt: "VoltAI is designed to be local-first, with extensibility
    as a core principle. The indexer uses TF-IDF for speed..."
    
 2. docs/design-notes.pdf (score: 0.72)
@@ -269,7 +269,7 @@ Top 3 results for: "architecture decisions"
    compute, explainable, and sufficient for small corpora..."
 
 AI Summary:
-BoltAI demonstrates a privacy-first local retrieval pipeline that indexes
+VoltAI demonstrates a privacy-first local retrieval pipeline that indexes
 developer documentation and supports fast summarization. It uses TF-IDF for
 initial vectorization and provides clear extension points for embeddings.
 ```
@@ -316,17 +316,17 @@ initial vectorization and provides clear extension points for embeddings.
 ## 🏗️ Project Architecture
 
 ```
-BoltAI/
+VoltAI/
 ├── mac-ui/                     # macOS SwiftUI app
-│   ├── BoltAI.app/Contents/    # Built app bundle (generated after build)
+│   ├── VoltAI.app/Contents/    # Built app bundle (generated after build)
 │   ├── Resources/              # App icons and images
 │   │   ├── AppIcon.icns
 │   │   └── AppIcon.png
 │   ├── scripts/                # Build & packaging scripts
 │   │   └── package_and_open.sh
-│   ├── Sources/BoltAI/         # SwiftUI source files
-│   │   ├── BoltAICaller.swift  # Handles API calls and backend communication
-│   │   ├── BoltAIViewModel.swift # ViewModel (MVVM) for app logic
+│   ├── Sources/VoltAI/         # SwiftUI source files
+│   │   ├── VoltAICaller.swift  # Handles API calls and backend communication
+│   │   ├── VoltAIViewModel.swift # ViewModel (MVVM) for app logic
 │   │   ├── ContentView.swift   # Main SwiftUI content view
 │   │   ├── DropZone.swift      # Drag-and-drop UI logic
 │   │   └── main.swift          # macOS app entry point
@@ -351,7 +351,7 @@ BoltAI/
 ├── Cargo.lock                  # Cargo lockfile
 ├── LICENSE                     # MIT license
 ├── Makefile                    # Build helpers
-├── boltai_index.json           # Index file (generated or static)
+├── voltai_index.json           # Index file (generated or static)
 └── README.md                   # Project documentation (this file)
 ```
 
@@ -394,7 +394,7 @@ BoltAI/
 
 ### CLI Configuration
 
-Create a `boltai.toml` in your home directory or project root:
+Create a `voltai.toml` in your home directory or project root:
 
 ```toml
 [indexing]
@@ -419,13 +419,13 @@ api_url = "http://localhost:11434"
 
 ```bash
 # Set default index location
-export BOLTAI_INDEX_PATH="$HOME/.boltai/default_index.json"
+export VOLTAI_INDEX_PATH="$HOME/.voltai/default_index.json"
 
 # Enable debug logging
-export BOLTAI_LOG_LEVEL="debug"
+export VOLTAI_LOG_LEVEL="debug"
 
 # Set custom config file
-export BOLTAI_CONFIG="$HOME/.config/boltai/config.toml"
+export VOLTAI_CONFIG="$HOME/.config/voltai/config.toml"
 ```
 
 ---
@@ -519,7 +519,7 @@ All prompts are logged to a local debug file for tuning.
 - [ ] Knowledge graph visualization
 
 ### Community Requests
-- See [GitHub Issues](https://github.com/wesleyscholl/BoltAI/issues) for feature requests
+- See [GitHub Issues](https://github.com/wesleyscholl/VoltAI/issues) for feature requests
 
 ---
 <a id="troubleshooting"></a>
@@ -575,8 +575,8 @@ swift package resolve
 
 ### Getting Help
 
-1. Check [GitHub Issues](https://github.com/wesleyscholl/BoltAI/issues)
-2. Read the [Discussions](https://github.com/wesleyscholl/BoltAI/discussions)
+1. Check [GitHub Issues](https://github.com/wesleyscholl/VoltAI/issues)
+2. Read the [Discussions](https://github.com/wesleyscholl/VoltAI/discussions)
 3. File a new issue with:
    - OS version
    - Rust version (`rustc --version`)
@@ -594,8 +594,8 @@ Contributions are welcome! Whether it's bug fixes, new features, documentation i
 1. **Fork the repository**
    ```bash
    # Click "Fork" on GitHub, then:
-   git clone https://github.com/YOUR_USERNAME/BoltAI.git
-   cd BoltAI
+   git clone https://github.com/YOUR_USERNAME/VoltAI.git
+   cd VoltAI
    ```
 
 2. **Create a branch**
@@ -620,7 +620,7 @@ Contributions are welcome! Whether it's bug fixes, new features, documentation i
    cargo build --release
    
    # Try your changes
-   ./target/release/boltai --help
+   ./target/release/voltai --help
    ```
 
 5. **Commit and push**
@@ -717,9 +717,9 @@ Copyright (c) 2025 Wesley Scholl
 <a id="star-history"></a>
 ## ⭐ Star History
 
-If you find BoltAI useful, please consider starring the repository!
+If you find VoltAI useful, please consider starring the repository!
 
-[![Star History Chart](https://api.star-history.com/svg?repos=wesleyscholl/BoltAI&type=Date)](https://star-history.com/#wesleyscholl/BoltAI&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=wesleyscholl/VoltAI&type=Date)](https://star-history.com/#wesleyscholl/VoltAI&Date)
 
 ---
 
@@ -729,6 +729,6 @@ If you find BoltAI useful, please consider starring the repository!
 
 *Privacy-first • Lightning-fast • Developer-friendly*
 
-[⬆ Back to Top](#️-boltai--local-first-ai-agent)
+[⬆ Back to Top](#️-voltai--local-first-ai-agent)
 
 </div>

@@ -7,4 +7,4 @@ package:
 	./scripts/package_and_open.sh
 
 run-app:
-	open BoltAI.app
+	open VoltAI.app

@@ -17,7 +17,7 @@ let window = NSWindow(
     defer: false
 )
 window.center()
-window.title = "BoltAI"
+window.title = "VoltAI"
 window.contentView = hosting
 window.makeKeyAndOrderFront(nil)
 

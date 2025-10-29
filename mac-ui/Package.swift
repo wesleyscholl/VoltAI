@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "BoltAI",
+    name: "VoltAI",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "BoltAI", targets: ["BoltAI"]),
+        .executable(name: "VoltAI", targets: ["VoltAI"]),
     ],
     dependencies: [],
     targets: [
         .executableTarget(
-            name: "BoltAI",
-            path: "Sources/BoltAI"
+            name: "VoltAI",
+            path: "Sources/VoltAI"
         )
     ]
 )

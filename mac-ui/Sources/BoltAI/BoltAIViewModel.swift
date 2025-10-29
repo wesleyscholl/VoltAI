@@ -3,8 +3,8 @@ import Combine
 import SwiftUI
 import AppKit
 
-final class BoltAIViewModel: ObservableObject {
-    @Published var messages: [ChatMessage] = [ChatMessage(role: "system", text: "BoltAI local agent ready.")]
+final class VoltAIViewModel: ObservableObject {
+    @Published var messages: [ChatMessage] = [ChatMessage(role: "system", text: "VoltAI local agent ready.")]
     @Published var input: String = ""
     @Published var isIndexing: Bool = false
     @Published var progress: Double = 0.0
@@ -23,7 +23,7 @@ final class BoltAIViewModel: ObservableObject {
 
     init() {
         Task {
-            let models = await BoltAICaller.listOllamaModels()
+            let models = await VoltAICaller.listOllamaModels()
             await MainActor.run {
                 self.availableModels = models
                 // If model list contains a fast gemma-like model prefer it
@@ -40,7 +40,7 @@ final class BoltAIViewModel: ObservableObject {
         let q = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
         // Debug: log user query append
-        fputs("[BoltAIViewModel] Appending user message: \(q)\n", stderr)
+        fputs("[VoltAIViewModel] Appending user message: \(q)\n", stderr)
         messages.append(ChatMessage(role: "user", text: q))
         input = ""
         isLoading = true
@@ -48,13 +48,13 @@ final class BoltAIViewModel: ObservableObject {
 
         Task.detached(priority: .userInitiated) { [q] in
             await MainActor.run { self.statusText = "Generating response..." }
-            fputs("[BoltAIViewModel] sending query: \(q)\n", stderr)
-            // Call the asynchronous BoltAICaller which returns stdout or an error string
-            let indexPath = FileManager.default.currentDirectoryPath + "/../boltai_index.json"
-                let res = await BoltAICaller.query(index: URL(fileURLWithPath: indexPath), q: q, k: 5, model: self.selectedModel)
-            fputs("[BoltAIViewModel] query response: \(res.prefix(200))\n", stderr)
+            fputs("[VoltAIViewModel] sending query: \(q)\n", stderr)
+            // Call the asynchronous VoltAICaller which returns stdout or an error string
+            let indexPath = FileManager.default.currentDirectoryPath + "/../voltai_index.json"
+                let res = await VoltAICaller.query(index: URL(fileURLWithPath: indexPath), q: q, k: 5, model: self.selectedModel)
+            fputs("[VoltAIViewModel] query response: \(res.prefix(200))\n", stderr)
             // debug: log raw response (may include process exit and stderr info)
-            fputs("[BoltAIViewModel] Raw response: \(res.prefix(200))\n", stderr)
+            fputs("[VoltAIViewModel] Raw response: \(res.prefix(200))\n", stderr)
 
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
@@ -88,11 +88,11 @@ final class BoltAIViewModel: ObservableObject {
             // If the fallback docs folder doesn't exist, surface an error to the UI and abort
             if !FileManager.default.fileExists(atPath: fallback.path) {
                 // Create an empty index file so the UI has something to load and queries can run (returning helpful fallback answers)
-                let outURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../boltai_index.json")
+                let outURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../voltai_index.json")
                 let emptyIndex = Index(docs: [], terms: [], vectors: [])
                 if let data = try? JSONEncoder().encode(emptyIndex) {
                     try? data.write(to: outURL)
-                    fputs("[BoltAIViewModel] wrote empty index to \(outURL.path)\n", stderr)
+                    fputs("[VoltAIViewModel] wrote empty index to \(outURL.path)\n", stderr)
                 } else {
                     DispatchQueue.main.async { self.lastError = "Could not create fallback empty index at \(outURL.path)" }
                     return
@@ -154,17 +154,17 @@ final class BoltAIViewModel: ObservableObject {
                 if Task.isCancelled { break }
                 await MainActor.run { self.progressMessage = "Indexing \(p.lastPathComponent)" }
                 // Use a stable out URL next to the repo root so the GUI can find it
-                let outURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().appendingPathComponent("boltai_index.json")
-                let res = await BoltAICaller.index(dir: p, out: outURL)
-                fputs("[BoltAIViewModel] index result: \(res.prefix(400))\n", stderr)
-                fputs("[BoltAIViewModel] expected outURL: \(outURL.path)\n", stderr)
-                fputs("[BoltAIViewModel] checking if index file exists...\n", stderr)
+                let outURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().appendingPathComponent("voltai_index.json")
+                let res = await VoltAICaller.index(dir: p, out: outURL)
+                fputs("[VoltAIViewModel] index result: \(res.prefix(400))\n", stderr)
+                fputs("[VoltAIViewModel] expected outURL: \(outURL.path)\n", stderr)
+                fputs("[VoltAIViewModel] checking if index file exists...\n", stderr)
                 // If the process returned a failure indicator, surface it immediately
                 let lowerRes = res.lowercased()
                 let isTimeout = lowerRes.contains("[timeout]")
                 if isTimeout {
                     // write raw output to debug file for inspection
-                    let dbg = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("boltai-index-debug-\(Int(Date().timeIntervalSince1970)).log")
+                    let dbg = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("voltai-index-debug-\(Int(Date().timeIntervalSince1970)).log")
                     try? res.write(to: dbg, atomically: true, encoding: .utf8)
                     await MainActor.run { self.lastError = "Indexing timed out. The indexer was terminated before completion. See debug log: \(dbg.path)"; self.aborted = true }
                     break
@@ -173,12 +173,12 @@ final class BoltAIViewModel: ObservableObject {
                 // we avoid duplicating the check here to prevent unreachable/duplicate logic.
                 // If file was created, proceed to next path
                 if FileManager.default.fileExists(atPath: outURL.path) {
-                    fputs("[BoltAIViewModel] found index at \(outURL.path)\n", stderr)
+                    fputs("[VoltAIViewModel] found index at \(outURL.path)\n", stderr)
                     // Quick sanity-check: try to read the file size — if it's suspiciously small, treat as likely truncated
                     if let attr = try? FileManager.default.attributesOfItem(atPath: outURL.path),
                        let size = attr[.size] as? UInt64 {
                         if size < 10 {
-                            let dbg = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("boltai-index-small-\(Int(Date().timeIntervalSince1970)).log")
+                            let dbg = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("voltai-index-small-\(Int(Date().timeIntervalSince1970)).log")
                             try? res.write(to: dbg, atomically: true, encoding: .utf8)
                             await MainActor.run { self.lastError = "Index file appears to be empty/truncated (size=\(size)). Raw output saved to: \(dbg.path)"; self.aborted = true }
                             break
@@ -194,9 +194,9 @@ final class BoltAIViewModel: ObservableObject {
                     // stop processing further paths; we only care about the produced index
                     break
                 } else {
-                    fputs("[BoltAIViewModel] index file not found after process. Will try alternate locations.\n", stderr)
+                    fputs("[VoltAIViewModel] index file not found after process. Will try alternate locations.\n", stderr)
                     // write raw output to debug file for inspection
-                    let dbg = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("boltai-debug-\(Int(Date().timeIntervalSince1970)).log")
+                    let dbg = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("voltai-debug-\(Int(Date().timeIntervalSince1970)).log")
                     try? res.write(to: dbg, atomically: true, encoding: .utf8)
                     await MainActor.run { self.lastError = "Indexer ran but no index file was created. Raw output saved to: \(dbg.path)" }
                     // try next path
@@ -208,10 +208,10 @@ final class BoltAIViewModel: ObservableObject {
             if let idxURL = createdIndexURL, !Task.isCancelled && !self.aborted {
                 Task.detached(priority: .userInitiated) { [weak self] in
                     guard let self = self else { return }
-                    fputs("[BoltAIViewModel] starting async doc load from \(idxURL.path)\n", stderr)
+                    fputs("[VoltAIViewModel] starting async doc load from \(idxURL.path)\n", stderr)
                     do {
                         let docs = try self.loadDocsFromIndexFile(idxURL)
-                        fputs("[BoltAIViewModel] loaded \(docs.count) docs successfully\n", stderr)
+                        fputs("[VoltAIViewModel] loaded \(docs.count) docs successfully\n", stderr)
                         await MainActor.run {
                             self.indexedDocs = docs
                             self.progressMessage = "Indexing complete"
@@ -224,7 +224,7 @@ final class BoltAIViewModel: ObservableObject {
                         }
                         return
                     } catch {
-                        fputs("[BoltAIViewModel] failed to read/parse index json at \(idxURL.path): \(error)\n", stderr)
+                        fputs("[VoltAIViewModel] failed to read/parse index json at \(idxURL.path): \(error)\n", stderr)
                         await MainActor.run { self.lastError = "Index created but failed to load: \(error)" }
                     }
                 }
@@ -238,9 +238,9 @@ final class BoltAIViewModel: ObservableObject {
             if !Task.isCancelled && !self.aborted {
                 // Best-effort: try to read our index
                 let candPaths = [
-                    URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().appendingPathComponent("boltai_index.json"),
-                    URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("boltai_index.json"),
-                    URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../boltai_index.json")
+                    URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().appendingPathComponent("voltai_index.json"),
+                    URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("voltai_index.json"),
+                    URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../voltai_index.json")
                 ]
                 var loaded = false
                 for cand in candPaths {
@@ -278,7 +278,7 @@ final class BoltAIViewModel: ObservableObject {
                             break
                         } else {
                             if let e = lastErr {
-                                fputs("[BoltAIViewModel] failed to read/parse index json at \(cand.path): \(e)\n", stderr)
+                                fputs("[VoltAIViewModel] failed to read/parse index json at \(cand.path): \(e)\n", stderr)
                                 await MainActor.run { self.lastError = "Index created but failed to load: \(e)" }
                             } else {
                                 await MainActor.run { self.lastError = "Index created but failed to load (unknown error)" }
@@ -328,21 +328,21 @@ struct Doc: Identifiable, Codable {
     let text: String
 }
 
-// Index struct for decoding boltai JSON index
+// Index struct for decoding voltai JSON index
 struct Index: Codable {
     let docs: [Doc]
     let terms: [String]
     let vectors: [[Float]]
 }
 
-extension BoltAIViewModel {
+extension VoltAIViewModel {
     // Read the index JSON file, decode it, and return a capped preview of docs to avoid UI hangs on large indexes.
     func loadDocsFromIndexFile(_ url: URL) throws -> [Doc] {
-        fputs("[BoltAIViewModel] loading index from \(url.path)\n", stderr)
+        fputs("[VoltAIViewModel] loading index from \(url.path)\n", stderr)
         let data = try Data(contentsOf: url)
-        fputs("[BoltAIViewModel] loaded \(data.count) bytes\n", stderr)
+        fputs("[VoltAIViewModel] loaded \(data.count) bytes\n", stderr)
         let index = try JSONDecoder().decode(Index.self, from: data)
-        fputs("[BoltAIViewModel] decoded index with \(index.docs.count) docs\n", stderr)
+        fputs("[VoltAIViewModel] decoded index with \(index.docs.count) docs\n", stderr)
         let maxDocs = 10
         let maxText = 100
         var docs: [Doc] = []
@@ -350,6 +350,6 @@ extension BoltAIViewModel {
             let truncated = d.text.count > maxText ? String(d.text.prefix(maxText)) + "…" : d.text
             docs.append(Doc(id: d.id, path: d.path, text: truncated))
         }
-        fputs("[BoltAIViewModel] returning \(docs.count) docs\n", stderr)
+        fputs("[VoltAIViewModel] returning \(docs.count) docs\n", stderr)
         return docs
     }}

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 struct ContentView: View {
-    @StateObject var vm = BoltAIViewModel()
+    @StateObject var vm = VoltAIViewModel()
     @State private var selection = 0
     @State private var showErrorAlert = false
     @State private var hasShownErrorAlert = false
@@ -61,7 +61,7 @@ struct ContentView: View {
                     LogoView()
                         .padding(.trailing, 4)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("BoltAI")
+                        Text("VoltAI")
                             .font(.system(size: 34, weight: .bold))
                             // White text color for better contrast
                             .foregroundColor(.white)
@@ -100,7 +100,7 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             VStack(alignment: .leading) {
-                                Text("BoltAI Chat")
+                                Text("VoltAI Chat")
                                     .font(.headline)
                                 Text("Ask questions about your indexed documents. Use the Index tab to add files.")
                                     .foregroundColor(.secondary)
@@ -141,7 +141,7 @@ struct ContentView: View {
                             // Fancy input
                             HStack(spacing: 8) {
                                 HStack {
-                                    TextField(vm.isLoading ? "Processing..." : "Ask BoltAI...", text: $vm.input)
+                                    TextField(vm.isLoading ? "Processing..." : "Ask VoltAI...", text: $vm.input)
                                         .textFieldStyle(.plain)
                                         .padding(12)
                                         .background(Color(NSColor.textBackgroundColor))
@@ -317,7 +317,7 @@ struct ContentView: View {
                     .padding(.vertical, 20)
                     if !vm.isIndexing && vm.lastError == nil {
                         Button("Open index file for inspection") {
-                            let indexURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().appendingPathComponent("boltai_index.json")
+                            let indexURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).deletingLastPathComponent().appendingPathComponent("voltai_index.json")
                             NSWorkspace.shared.activateFileViewerSelecting([indexURL])
                         }
                         .buttonStyle(.plain)
@@ -405,7 +405,7 @@ struct ContentView: View {
                             }
                             Button("Refresh models") {
                                 Task {
-                                    let models = await BoltAICaller.listOllamaModels()
+                                    let models = await VoltAICaller.listOllamaModels()
                                     await MainActor.run {
                                         vm.availableModels = models
                                     }
@@ -418,7 +418,7 @@ struct ContentView: View {
                     SectionView(title: "Advanced", icon: "wrench.and.screwdriver") {
                         Button(action: {
                             // reveal index JSON in Finder
-                            let indexURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../boltai_index.json")
+                            let indexURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../voltai_index.json")
                             NSWorkspace.shared.activateFileViewerSelecting([indexURL])
                         }) {
                             HStack {

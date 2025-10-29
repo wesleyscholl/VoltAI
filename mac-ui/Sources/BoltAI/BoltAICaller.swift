@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-enum BoltAICaller {
+enum VoltAICaller {
     static func runProcessAsync(launchPath: String, arguments: [String], timeout: TimeInterval = 600.0) async -> String {
         await withCheckedContinuation { continuation in
             let p = Process()
@@ -10,8 +10,8 @@ enum BoltAICaller {
 
             // Redirect stdout/stderr to temporary files to avoid pipe buffer deadlocks
             let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            let outURL = tmpDir.appendingPathComponent("boltai-out-\(UUID().uuidString).log")
-            let errURL = tmpDir.appendingPathComponent("boltai-err-\(UUID().uuidString).log")
+            let outURL = tmpDir.appendingPathComponent("voltai-out-\(UUID().uuidString).log")
+            let errURL = tmpDir.appendingPathComponent("voltai-err-\(UUID().uuidString).log")
             FileManager.default.createFile(atPath: outURL.path, contents: nil, attributes: nil)
             FileManager.default.createFile(atPath: errURL.path, contents: nil, attributes: nil)
             let outHandleWrite = try? FileHandle(forWritingTo: outURL)
@@ -20,7 +20,7 @@ enum BoltAICaller {
             if let e = errHandleWrite { p.standardError = e }
 
             var resumed = false
-            let resumeQueue = DispatchQueue(label: "BoltAICaller.safeResume")
+            let resumeQueue = DispatchQueue(label: "VoltAICaller.safeResume")
             let safeResume: @Sendable (String) -> Void = { s in
                 resumeQueue.sync {
                     if !resumed {
@@ -31,9 +31,9 @@ enum BoltAICaller {
             }
 
             do {
-                fputs("[BoltAICaller] runProcess: starting \(launchPath) args=\(arguments)\n", stderr)
+                fputs("[VoltAICaller] runProcess: starting \(launchPath) args=\(arguments)\n", stderr)
                 try p.run()
-                fputs("[BoltAICaller] runProcess: started pid=\(p.processIdentifier)\n", stderr)
+                fputs("[VoltAICaller] runProcess: started pid=\(p.processIdentifier)\n", stderr)
             } catch {
                 safeResume("failed to run: \(error)")
                 return
@@ -43,14 +43,14 @@ enum BoltAICaller {
             let timeoutWorkItem = DispatchWorkItem {
                 if p.isRunning {
                     // attempt graceful termination
-                    fputs("[BoltAICaller] runProcess: timeout reached, terminating pid=\(p.processIdentifier)\n", stderr)
+                    fputs("[VoltAICaller] runProcess: timeout reached, terminating pid=\(p.processIdentifier)\n", stderr)
                     p.terminate()
                     // schedule kill after short grace period
                     let pidToKill = p.processIdentifier
                     DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
                         if p.isRunning {
                             // force-kill via POSIX kill
-                            fputs("[BoltAICaller] runProcess: force-killing pid=\(pidToKill)\n", stderr)
+                            fputs("[VoltAICaller] runProcess: force-killing pid=\(pidToKill)\n", stderr)
                             kill(pidToKill, SIGKILL)
                         }
                     }
@@ -62,7 +62,7 @@ enum BoltAICaller {
                 // cancel timeout work if still pending
                 timeoutWorkItem.cancel()
 
-                fputs("[BoltAICaller] runProcess: terminationHandler called pid=\(proc.processIdentifier) status=\(proc.terminationStatus)\n", stderr)
+                fputs("[VoltAICaller] runProcess: terminationHandler called pid=\(proc.processIdentifier) status=\(proc.terminationStatus)\n", stderr)
 
                 // Close write handles so file contents are flushed
                 if let o = outHandleWrite { try? o.close() }
@@ -93,21 +93,21 @@ enum BoltAICaller {
     }
 
     static func index(dir: URL, out: URL) async -> String {
-        let binary = locateBoltAIBinary()
-        fputs("[BoltAICaller] launching binary: \(binary)\n", stderr)
+        let binary = locateVoltAIBinary()
+        fputs("[VoltAICaller] launching binary: \(binary)\n", stderr)
         // Indexing can take a while for large folders; give a long timeout (10 minutes)
         return await runProcessAsync(launchPath: binary, arguments: ["index", "-d", dir.path, "-o", out.path], timeout: 600.0)
     }
 
     static func query(index: URL, q: String, k: Int) async -> String {
-        let binary = locateBoltAIBinary()
-        fputs("[BoltAICaller] launching binary: \(binary)\n", stderr)
+        let binary = locateVoltAIBinary()
+        fputs("[VoltAICaller] launching binary: \(binary)\n", stderr)
         return await runProcessAsync(launchPath: binary, arguments: ["query", "-i", index.path, "-q", q, "-k", String(k)], timeout: 60.0)
     }
 
     static func query(index: URL, q: String, k: Int, model: String?) async -> String {
-        let binary = locateBoltAIBinary()
-        fputs("[BoltAICaller] launching binary: \(binary) (model: \(model ?? "auto"))\n", stderr)
+        let binary = locateVoltAIBinary()
+        fputs("[VoltAICaller] launching binary: \(binary) (model: \(model ?? "auto"))\n", stderr)
         var args = ["query", "-i", index.path, "-q", q, "-k", String(k)]
         if let m = model, !m.isEmpty {
             args.append(contentsOf: ["-m", m])
@@ -148,9 +148,9 @@ enum BoltAICaller {
         }
     }
 
-    // Try a few reasonable locations for the boltai binary so the UI can find it during development
-    static func locateBoltAIBinary() -> String {
-        // First, try relative to the bundle: ../../../../target/release/boltai (from mac-ui/.build/.../ to BoltAI/target/release/)
+    // Try a few reasonable locations for the voltai binary so the UI can find it during development
+    static func locateVoltAIBinary() -> String {
+        // First, try relative to the bundle: ../../../../target/release/voltai (from mac-ui/.build/.../ to VoltAI/target/release/)
         if let bundleExe = Bundle.main.executableURL {
             let rustFromBundle = bundleExe
                 .deletingLastPathComponent() // debug
@@ -159,31 +159,31 @@ enum BoltAICaller {
                 .deletingLastPathComponent() // mac-ui
                 .appendingPathComponent("target")
                 .appendingPathComponent("release")
-                .appendingPathComponent("boltai").path
+                .appendingPathComponent("voltai").path
             if isExecutableFile(atPath: rustFromBundle) {
-                fputs("[BoltAICaller] selected binary: \(rustFromBundle)\n", stderr)
+                fputs("[VoltAICaller] selected binary: \(rustFromBundle)\n", stderr)
                 return rustFromBundle
             }
         }
 
-        // Prefer the Rust CLI built in ../target/release/boltai (common dev path)
-        let relCandidate = FileManager.default.currentDirectoryPath + "/../target/release/boltai"
+        // Prefer the Rust CLI built in ../target/release/voltai (common dev path)
+        let relCandidate = FileManager.default.currentDirectoryPath + "/../target/release/voltai"
         if isExecutableFile(atPath: relCandidate) {
             // Skip candidates that live in the GUI's build directory to avoid launching the app
             if !relCandidate.contains("/.build/") {
                 if let bundleExe = Bundle.main.executableURL?.path, bundleExe != relCandidate {
-                    fputs("[BoltAICaller] selected binary: \(relCandidate)\n", stderr)
+                    fputs("[VoltAICaller] selected binary: \(relCandidate)\n", stderr)
                     return relCandidate
                 }
             }
         }
 
-        // Next, prefer a local ./boltai (e.g., copied into the mac-ui folder)
-        let cwdCandidate = FileManager.default.currentDirectoryPath + "/boltai"
+        // Next, prefer a local ./voltai (e.g., copied into the mac-ui folder)
+        let cwdCandidate = FileManager.default.currentDirectoryPath + "/voltai"
         if isExecutableFile(atPath: cwdCandidate) {
             if !cwdCandidate.contains("/.build/") {
                 if let bundleExe = Bundle.main.executableURL?.path, bundleExe != cwdCandidate {
-                    fputs("[BoltAICaller] selected binary: \(cwdCandidate)\n", stderr)
+                    fputs("[VoltAICaller] selected binary: \(cwdCandidate)\n", stderr)
                     return cwdCandidate
                 }
             }
@@ -192,22 +192,22 @@ enum BoltAICaller {
         // Finally check next to the GUI executable (useful when bundled into an .app) but ensure
         // we don't accidentally try to execute an .app bundle or directory.
         if let bundleExe = Bundle.main.executableURL {
-            let candidate = bundleExe.deletingLastPathComponent().appendingPathComponent("boltai").path
+            let candidate = bundleExe.deletingLastPathComponent().appendingPathComponent("voltai").path
             // avoid returning the GUI executable or an .app bundle or anything in the GUI build folder
             if candidate != bundleExe.path && isExecutableFile(atPath: candidate) && !candidate.contains("/.build/") {
-                fputs("[BoltAICaller] selected binary: \(candidate)\n", stderr)
+                fputs("[VoltAICaller] selected binary: \(candidate)\n", stderr)
                 return candidate
             }
         }
 
-        // Last resort: return ./boltai (likely to fail with clear error), keep for backwards compat
-        let fallback = "./boltai"
+        // Last resort: return ./voltai (likely to fail with clear error), keep for backwards compat
+        let fallback = "./voltai"
         if isExecutableFile(atPath: fallback) && !fallback.contains("/.build/") {
-            fputs("[BoltAICaller] selected binary: \(fallback)\n", stderr)
+            fputs("[VoltAICaller] selected binary: \(fallback)\n", stderr)
             return fallback
         }
         // As a very last fallback, return something that will fail clearly, not the GUI executable
-        fputs("[BoltAICaller] no binary found, returning fallback\n", stderr)
+        fputs("[VoltAICaller] no binary found, returning fallback\n", stderr)
         return fallback
     }
 

@@ -4,10 +4,10 @@ build:
 	cargo build --release
 
 run: build
-	./target/release/boltai
+	./target/release/voltai
 
 index: build
-	./target/release/boltai index -d docs -o boltai_index.json
+	./target/release/voltai index -d docs -o voltai_index.json
 
 query: build
-	./target/release/boltai query -i boltai_index.json -q "example query" -k 5
+	./target/release/voltai query -i voltai_index.json -q "example query" -k 5
