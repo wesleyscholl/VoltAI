@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Testing Improvements - 2025-11-05
+
+#### Added
+- Comprehensive test suite with 40 unit tests achieving **58.18% code coverage** (128/220 lines)
+- Tests for tokenization functionality (12 tests):
+  - Basic tokenization, empty strings, special characters, unicode support
+  - Contractions, numbers with words, mixed case, punctuation handling
+- Tests for cosine similarity calculations (5 tests):
+  - Identical vectors, orthogonal vectors, opposite vectors, normalized vectors, zero vectors, negative values
+- Tests for file operations (6 tests):
+  - Text file reading, binary file detection, UTF-8 support, PDF handling, empty file handling
+- Tests for indexing functionality (11 tests):
+  - Index creation, serialization, empty directories, nested directory structures
+  - Various file extensions (.txt, .csv, .json, .md), binary file filtering
+  - Large files, special filenames (dashes, underscores, spaces), path preservation in index
+- Tests for query operations (3 tests):
+  - Query with and without index, general query detection (summarize, list, all)
+- Tests for vector operations (3 tests):
+  - Vector normalization, precision testing, document and index serialization
+- Added `tempfile = "3.8"` to dev-dependencies for filesystem testing
+
+#### Test Coverage Details
+- **Overall Coverage**: 58.18% (128/220 lines)
+- **Core Functionality Coverage**: ~85%+ for tokenization, TF-IDF calculations, file I/O
+- **Uncovered Areas**: Primarily Ollama CLI integration and fallback logic (external dependencies)
+  - Lines 201-246: Ollama model detection and command execution
+  - Lines 275-283: Query response handling  
+  - Lines 326-412: Fallback mechanisms when Ollama unavailable
+
+#### Technical Details
+- All 40 tests passing with zero failures
+- Tests use proper error handling with `Result<()>` returns
+- Comprehensive edge case coverage for core algorithms
+- Focus on unit testing pure functions and core business logic
+- Integration tests cover end-to-end indexing workflows
+
 ### Planned for v0.9.0 - Cross-Platform Desktop
 **Target:** Q1 2025
 
