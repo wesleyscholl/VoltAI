@@ -1,6 +1,8 @@
 
 # ⚡️🤖 VoltAI — Fast Local-First AI Agent
 
+**Status**: High-performance Rust+Swift AI assistant with local inference - production-ready for privacy-conscious document analysis workflows.
+
 <div align="center">
 
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
