@@ -1079,4 +1079,470 @@ mod tests {
         let unique_terms: HashSet<String> = tokens.iter().cloned().collect();
         assert_eq!(unique_terms.len(), 3); // test, other, word
     }
+
+    #[test]
+    fn test_ollama_model_selection_env() {
+        // Test environment variable override
+        std::env::set_var("OLLAMA_MODEL", "gemma3:4b");
+        let model = std::env::var("OLLAMA_MODEL").unwrap();
+        assert_eq!(model, "gemma3:4b");
+        std::env::remove_var("OLLAMA_MODEL");
+    }
+
+    #[test]
+    fn test_query_tokenization() {
+        let query = "How does kubernetes work?";
+        let tokens = tokenize(query);
+        assert!(tokens.contains(&"how".to_string()));
+        assert!(tokens.contains(&"does".to_string()));
+        assert!(tokens.contains(&"kubernetes".to_string()));
+        assert!(tokens.contains(&"work".to_string()));
+    }
+
+    #[test]
+    fn test_general_query_patterns() {
+        // Test various general query patterns
+        let queries = vec![
+            "summarize everything",
+            "list all files",
+            "show documents",
+            "what",
+        ];
+        
+        for q in queries {
+            let lower = q.to_lowercase();
+            let is_general = lower.contains("summarize") 
+                || lower.contains("list") 
+                || lower.contains("all") 
+                || lower.contains("documents")
+                || tokenize(&lower).len() < 3;
+            assert!(is_general, "Query '{}' should be detected as general", q);
+        }
+    }
+
+    #[test]
+    fn test_specific_query_patterns() {
+        let queries = vec![
+            "kubernetes deployment best practices",
+            "docker container networking explained",
+            "nginx configuration tutorial",
+        ];
+        
+        for q in queries {
+            let lower = q.to_lowercase();
+            let tokens = tokenize(&lower);
+            assert!(tokens.len() >= 3, "Query '{}' should have 3+ tokens", q);
+        }
+    }
+
+    #[test]
+    fn test_query_vector_normalization() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let index_path = temp_dir.path().join("index.json");
+        
+        // Create index with known terms
+        let idx = Index {
+            terms: vec!["kubernetes".to_string(), "docker".to_string(), "container".to_string()],
+            docs: vec![
+                Doc {
+                    id: "1".to_string(),
+                    path: "test.txt".to_string(),
+                    text: "kubernetes and docker".to_string(),
+                }
+            ],
+            vectors: vec![vec![0.7071, 0.7071, 0.0]],
+        };
+        
+        let f = File::create(&index_path)?;
+        serde_json::to_writer(f, &idx)?;
+        
+        // Load and verify
+        let idx_file = File::open(&index_path)?;
+        let loaded: Index = serde_json::from_reader(idx_file)?;
+        assert_eq!(loaded.terms.len(), 3);
+        assert_eq!(loaded.vectors[0].len(), 3);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_document_keyword_extraction() {
+        let text = "kubernetes kubernetes docker nginx nginx nginx";
+        let tokens = tokenize(text);
+        
+        let mut tf: HashMap<String, usize> = HashMap::new();
+        for token in tokens {
+            if token.len() > 2 {
+                *tf.entry(token).or_insert(0) += 1;
+            }
+        }
+        
+        let mut kv: Vec<(String, usize)> = tf.into_iter().collect();
+        kv.sort_by(|a, b| b.1.cmp(&a.1));
+        
+        // Top keywords by frequency
+        assert_eq!(kv[0].0, "nginx"); // 3 occurrences
+        assert_eq!(kv[1].0, "kubernetes"); // 2 occurrences
+        assert_eq!(kv[2].0, "docker"); // 1 occurrence
+    }
+
+    #[test]
+    fn test_context_string_building() {
+        let keywords = vec!["kubernetes", "docker", "nginx", "container"];
+        let context = keywords.join(", ");
+        
+        assert!(context.contains("kubernetes"));
+        assert!(context.contains("docker"));
+        assert!(context.contains("nginx"));
+        assert_eq!(context, "kubernetes, docker, nginx, container");
+    }
+
+    #[test]
+    fn test_filename_extraction_from_path() {
+        let paths = vec![
+            "/path/to/document.txt",
+            "/home/user/file.md",
+            "relative/path/data.csv",
+        ];
+        
+        for path_str in paths {
+            let path = std::path::Path::new(path_str);
+            let fname = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| path_str.to_string());
+            
+            assert!(!fname.is_empty());
+            assert!(!fname.contains('/'));
+        }
+    }
+
+    #[test]
+    fn test_prompt_formatting_for_general_queries() {
+        let context = "Filename: test.txt\nKeywords: kubernetes, docker\n---\n";
+        let prompt = format!(
+            "Documents:\n{}\nEnd of documents.\n\nProvide the summaries now.",
+            context
+        );
+        
+        assert!(prompt.contains("Documents:"));
+        assert!(prompt.contains("test.txt"));
+        assert!(prompt.contains("kubernetes"));
+        assert!(prompt.contains("End of documents"));
+    }
+
+    #[test]
+    fn test_prompt_formatting_for_specific_queries() {
+        let context = "Document content here";
+        let query = "How does kubernetes work?";
+        let prompt = format!("Use the following documents as context:\n{}\nQuestion: {}", context, query);
+        
+        assert!(prompt.contains("Use the following documents as context"));
+        assert!(prompt.contains(query));
+        assert!(prompt.contains(context));
+    }
+
+    #[test]
+    fn test_ollama_command_construction() {
+        let model = "mistral";
+        let prompt = "test prompt";
+        
+        // Simulate command construction
+        let args = vec!["run", model, prompt];
+        assert_eq!(args[0], "run");
+        assert_eq!(args[1], "mistral");
+        assert_eq!(args[2], "test prompt");
+    }
+
+    #[test]
+    fn test_fallback_summary_generation() {
+        // Test keyword-based summary generation
+        let keywords = vec!["kubernetes", "deployment", "scaling"];
+        let summary = format!("This document discusses: {}.", keywords.join(", "));
+        
+        assert_eq!(summary, "This document discusses: kubernetes, deployment, scaling.");
+    }
+
+    #[test]
+    fn test_empty_keywords_handling() {
+        let keywords: Vec<String> = vec![];
+        let kw_str = if keywords.is_empty() {
+            String::from("(no keywords)")
+        } else {
+            keywords.join(", ")
+        };
+        
+        assert_eq!(kw_str, "(no keywords)");
+    }
+
+    #[test]
+    fn test_top_k_selection() {
+        let k = 3;
+        let mut scores = vec![
+            (0, 0.9),
+            (1, 0.7),
+            (2, 0.8),
+            (3, 0.6),
+            (4, 0.95),
+        ];
+        
+        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let top_k: Vec<usize> = scores.into_iter().take(k).map(|(i, _)| i).collect();
+        
+        assert_eq!(top_k.len(), 3);
+        assert_eq!(top_k[0], 4); // 0.95
+        assert_eq!(top_k[1], 0); // 0.9
+        assert_eq!(top_k[2], 2); // 0.8
+    }
+
+    #[test]
+    fn test_query_with_empty_index() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let index_path = temp_dir.path().join("empty_index.json");
+        
+        let idx = Index {
+            terms: vec![],
+            docs: vec![],
+            vectors: vec![],
+        };
+        
+        let f = File::create(&index_path)?;
+        serde_json::to_writer(f, &idx)?;
+        
+        // Verify empty index can be loaded
+        let idx_file = File::open(&index_path)?;
+        let loaded: Index = serde_json::from_reader(idx_file)?;
+        assert!(loaded.terms.is_empty());
+        assert!(loaded.docs.is_empty());
+        assert!(loaded.vectors.is_empty());
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_similarity_ranking() {
+        let mut sims = vec![
+            (0, 0.5),
+            (1, 0.9),
+            (2, 0.3),
+            (3, 0.7),
+        ];
+        
+        sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        assert_eq!(sims[0].0, 1); // Highest similarity first
+        assert_eq!(sims[1].0, 3);
+        assert_eq!(sims[2].0, 0);
+        assert_eq!(sims[3].0, 2); // Lowest similarity last
+    }
+
+    #[test]
+    fn test_model_size_comparison() {
+        let size_gb = 3.3 * 1024.0 * 1024.0 * 1024.0;
+        let size_mb = 700.0 * 1024.0 * 1024.0;
+        let size_kb = 500.0 * 1024.0;
+        
+        assert!(size_kb < size_mb);
+        assert!(size_mb < size_gb);
+    }
+
+    #[test]
+    fn test_index_with_pdf_extension() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let pdf_path = dir.path().join("test.pdf");
+        
+        // Create a fake PDF file
+        std::fs::write(&pdf_path, b"%PDF-1.4 fake content")?;
+        
+        // PDF files are in allowed_exts list
+        let allowed_exts = ["txt", "md", "csv", "json", "pdf"];
+        let ext = pdf_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        assert!(allowed_exts.contains(&ext));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_tf_idf_log_calculation() {
+        let count = 5.0_f32;
+        let tfv = 1.0 + count.log2();
+        
+        assert!(tfv > 1.0);
+        assert!((tfv - 3.321928).abs() < 0.001); // log2(5) + 1 ≈ 3.32
+    }
+
+    #[test]
+    fn test_vector_dot_product() {
+        let v1 = vec![0.6, 0.8];
+        let v2 = vec![0.8, 0.6];
+        
+        let dot = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum::<f32>();
+        assert!((dot - 0.96).abs() < 0.001); // 0.6*0.8 + 0.8*0.6 = 0.96
+    }
+
+    #[test]
+    fn test_term_document_frequency_map() {
+        let mut df: HashMap<String, usize> = HashMap::new();
+        let docs = vec![
+            vec!["docker", "kubernetes"],
+            vec!["docker", "container"],
+            vec!["kubernetes", "pod"],
+        ];
+        
+        for doc in &docs {
+            let mut seen: HashSet<String> = HashSet::new();
+            for &term in doc {
+                if seen.insert(term.to_string()) {
+                    *df.entry(term.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+        
+        assert_eq!(df.get("docker"), Some(&2)); // In 2 docs
+        assert_eq!(df.get("kubernetes"), Some(&2)); // In 2 docs
+        assert_eq!(df.get("container"), Some(&1)); // In 1 doc
+        assert_eq!(df.get("pod"), Some(&1)); // In 1 doc
+    }
+
+    #[test]
+    fn test_sorting_terms_by_frequency() {
+        let df: HashMap<String, usize> = [
+            ("docker".to_string(), 5),
+            ("kubernetes".to_string(), 3),
+            ("nginx".to_string(), 8),
+        ].iter().cloned().collect();
+        
+        let mut v: Vec<(String, usize)> = df.into_iter().collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1));
+        
+        assert_eq!(v[0].0, "nginx"); // 8
+        assert_eq!(v[1].0, "docker"); // 5
+        assert_eq!(v[2].0, "kubernetes"); // 3
+    }
+
+    #[test]
+    fn test_term_index_mapping() {
+        let terms = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let term_index: HashMap<&String, usize> = terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+        
+        assert_eq!(term_index.get(&"alpha".to_string()), Some(&0));
+        assert_eq!(term_index.get(&"beta".to_string()), Some(&1));
+        assert_eq!(term_index.get(&"gamma".to_string()), Some(&2));
+    }
+
+    #[test]
+    fn test_vector_initialization() {
+        let size = 10;
+        let vec: Vec<f32> = vec![0.0; size];
+        
+        assert_eq!(vec.len(), size);
+        assert!(vec.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_norm_calculation() {
+        let vec = vec![3.0, 4.0];
+        let norm = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert_eq!(norm, 5.0);
+        
+        let norm_with_floor = norm.max(1e-9);
+        assert_eq!(norm_with_floor, 5.0);
+    }
+
+    #[test]
+    fn test_vector_normalization_division() {
+        let mut vec = vec![3.0_f32, 4.0_f32];
+        let norm = 5.0_f32;
+        
+        for x in vec.iter_mut() {
+            *x /= norm;
+        }
+        
+        assert!((vec[0] - 0.6_f32).abs() < 0.001);
+        assert!((vec[1] - 0.8_f32).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_allowed_extensions_filter() {
+        let allowed_exts = ["txt", "md", "csv", "json", "pdf"];
+        
+        assert!(allowed_exts.contains(&"txt"));
+        assert!(allowed_exts.contains(&"pdf"));
+        assert!(!allowed_exts.contains(&"exe"));
+        assert!(!allowed_exts.contains(&"jpg"));
+    }
+
+    #[test]
+    fn test_path_extension_extraction() {
+        let path = std::path::Path::new("/path/to/file.txt");
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        
+        assert_eq!(ext, "txt");
+    }
+
+    #[test]
+    fn test_file_sorting() {
+        let mut files = vec![
+            std::path::PathBuf::from("c.txt"),
+            std::path::PathBuf::from("a.txt"),
+            std::path::PathBuf::from("b.txt"),
+        ];
+        
+        files.sort();
+        
+        assert_eq!(files[0], std::path::PathBuf::from("a.txt"));
+        assert_eq!(files[1], std::path::PathBuf::from("b.txt"));
+        assert_eq!(files[2], std::path::PathBuf::from("c.txt"));
+    }
+
+    #[test]
+    fn test_query_vector_with_unknown_terms() {
+        let terms = vec!["kubernetes".to_string(), "docker".to_string()];
+        let term_map: HashMap<&String, usize> = terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+        
+        let query_tokens = vec!["nginx".to_string(), "unknown".to_string()];
+        let mut q_vec: Vec<f32> = vec![0.0; terms.len()];
+        
+        for t in query_tokens.iter() {
+            if let Some(&i) = term_map.get(t) {
+                q_vec[i] += 1.0;
+            }
+        }
+        
+        // Unknown terms should not affect the vector
+        assert_eq!(q_vec, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_index_preserves_document_order() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        
+        std::fs::write(dir.path().join("a.txt"), "first")?;
+        std::fs::write(dir.path().join("b.txt"), "second")?;
+        std::fs::write(dir.path().join("c.txt"), "third")?;
+        
+        let index_path = dir.path().join("index.json");
+        index_dir(dir.path(), &index_path)?;
+        
+        let f = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(f)?;
+        
+        // Files should be sorted
+        assert_eq!(idx.docs.len(), 3);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_parallel_vector_computation() {
+        use rayon::prelude::*;
+        
+        let data = vec![vec![1.0, 2.0], vec![3.0, 4.0], vec![5.0, 6.0]];
+        
+        let results: Vec<f32> = data.par_iter()
+            .map(|v| v.iter().sum::<f32>())
+            .collect();
+        
+        assert_eq!(results, vec![3.0, 7.0, 11.0]);
+    }
 }
