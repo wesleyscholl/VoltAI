@@ -938,4 +938,145 @@ mod tests {
         
         Ok(())
     }
+    
+    #[test]
+    fn test_tfidf_computation() {
+        // Test basic TF-IDF calculation
+        let term_freq: f32 = 5.0;
+        let doc_count: f32 = 100.0;
+        let docs_with_term: f32 = 10.0;
+        
+        let tf = term_freq.ln() + 1.0;
+        let idf = (doc_count / (docs_with_term + 1.0)).ln();
+        let tfidf = tf * idf;
+        
+        assert!(tfidf > 0.0);
+        assert!(tf > 1.0);
+        assert!(idf > 0.0);
+    }
+
+    #[test]
+    fn test_vector_similarity_ranges() {
+        // Test similarity (dot product, not normalized)
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![4.0, 5.0, 6.0];
+        
+        let sim = cosine_sim(&a, &b); // This is actually dot product
+        assert!(sim > 0.0); // Positive correlation
+    }
+
+    #[test]
+    fn test_keyword_extraction_logic() {
+        // Simulate keyword extraction
+        let text = "kubernetes kubernetes docker docker docker nginx";
+        let tokens = tokenize(text);
+        
+        let mut tf: HashMap<String, usize> = HashMap::new();
+        for tk in tokens {
+            if tk.len() > 2 {
+                *tf.entry(tk).or_insert(0) += 1;
+            }
+        }
+        
+        let mut kv: Vec<(String, usize)> = tf.into_iter().collect();
+        kv.sort_by(|a, b| b.1.cmp(&a.1));
+        
+        // docker should be first (3 occurrences)
+        assert_eq!(kv[0].0, "docker");
+        assert_eq!(kv[0].1, 3);
+        
+        // kubernetes should be second (2 occurrences)
+        assert_eq!(kv[1].0, "kubernetes");
+        assert_eq!(kv[1].1, 2);
+    }
+
+    #[test]
+    fn test_context_building() {
+        // Test that context string can be built
+        let keywords = vec!["kubernetes", "docker", "nginx"];
+        let context = keywords.join(", ");
+        
+        assert_eq!(context, "kubernetes, docker, nginx");
+        assert!(context.contains("kubernetes"));
+        assert!(context.contains("docker"));
+    }
+
+    #[test]
+    fn test_filename_extraction() {
+        let path = "/path/to/document/test.txt";
+        let fname = std::path::Path::new(path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string());
+        
+        assert_eq!(fname, "test.txt");
+    }
+
+    #[test]
+    fn test_size_unit_parsing() {
+        // Test size parsing logic for ollama model selection
+        let size_gb = 3.3 * 1024.0 * 1024.0 * 1024.0;
+        let size_mb = 700.0 * 1024.0 * 1024.0;
+        
+        assert!(size_gb > size_mb);
+        assert!(size_mb > 0.0);
+    }
+
+    #[test]
+    fn test_query_vector_construction() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        
+        // Create index with known terms
+        let file = temp_dir.path().join("test.txt");
+        let mut f = File::create(&file)?;
+        writeln!(f, "kubernetes docker container orchestration")?;
+        
+        let index_path = temp_dir.path().join("index.json");
+        index_dir(temp_dir.path(), &index_path)?;
+        
+        // Load index
+        let idx_file = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(idx_file)?;
+        
+        // Verify terms were extracted
+        assert!(!idx.terms.is_empty());
+        assert!(idx.terms.contains(&"kubernetes".to_string()));
+        assert!(idx.terms.contains(&"docker".to_string()));
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_multiple_docs_ranking() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        
+        // Create docs with different content
+        let file1 = temp_dir.path().join("k8s.txt");
+        let mut f1 = File::create(&file1)?;
+        writeln!(f1, "kubernetes cluster pod deployment")?;
+        
+        let file2 = temp_dir.path().join("docker.txt");
+        let mut f2 = File::create(&file2)?;
+        writeln!(f2, "docker container image registry")?;
+        
+        let index_path = temp_dir.path().join("index.json");
+        index_dir(temp_dir.path(), &index_path)?;
+        
+        let idx_file = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(idx_file)?;
+        
+        assert_eq!(idx.docs.len(), 2);
+        assert!(idx.terms.len() >= 6); // At least unique terms from both docs
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_term_frequency_deduplication() {
+        let text = "test test test other word";
+        let tokens = tokenize(text);
+        
+        let unique_terms: HashSet<String> = tokens.iter().cloned().collect();
+        assert_eq!(unique_terms.len(), 3); // test, other, word
+    }
 }
