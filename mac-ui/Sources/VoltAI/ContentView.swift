@@ -94,6 +94,9 @@ struct ContentView: View {
             }
             .padding(.horizontal, 4)
 
+            // Ollama status banner — only shown when Ollama is unavailable or has no models
+            ollamaStatusBanner
+
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(NSColor.controlBackgroundColor))
                 .overlay(
@@ -209,6 +212,48 @@ struct ContentView: View {
             Spacer()
         }
         .padding(20)
+    }
+
+    /// A narrow warning banner shown in the home view when Ollama is not ready.
+    @ViewBuilder
+    var ollamaStatusBanner: some View {
+        switch vm.ollamaStatus {
+        case .notInstalled:
+            ollamaBannerRow(
+                icon: "xmark.circle.fill",
+                color: .red,
+                message: "Ollama is not installed. Download it at ollama.com, then restart VoltAI."
+            )
+        case .notRunning:
+            ollamaBannerRow(
+                icon: "exclamationmark.triangle.fill",
+                color: .orange,
+                message: "Ollama is not running. In Terminal, run: ollama serve"
+            )
+        case .noModels:
+            ollamaBannerRow(
+                icon: "info.circle.fill",
+                color: .yellow,
+                message: "Ollama is running but has no models. In Terminal, run: ollama pull llama3.2"
+            )
+        case .ready:
+            EmptyView()
+        }
+    }
+
+    private func ollamaBannerRow(icon: String, color: Color, message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.12))
+        .cornerRadius(8)
     }
 
     var indexView: some View {

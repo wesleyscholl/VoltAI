@@ -16,6 +16,7 @@ final class VoltAIViewModel: ObservableObject {
     @Published var statusText: String = ""
     @Published var availableModels: [String] = []
     @Published var selectedModel: String? = nil
+    @Published var ollamaStatus: OllamaStatus = .notInstalled
 
     private var currentTask: Task<Void, Never>? = nil
 
@@ -23,17 +24,26 @@ final class VoltAIViewModel: ObservableObject {
 
     init() {
         Task {
-            let models = await VoltAICaller.listOllamaModels()
+            let status = await VoltAICaller.checkOllamaStatus()
             await MainActor.run {
-                self.availableModels = models
-                // If model list contains a fast gemma-like model prefer it
-                if self.selectedModel == nil {
-                    if models.contains("llama2:1b") { self.selectedModel = "llama2:1b" }
-                    else if models.contains("gemma3:1b") { self.selectedModel = "gemma3:1b" }
-                    else if models.contains("mistral:latest") { self.selectedModel = "mistral:latest" }
+                self.ollamaStatus = status
+                if case .ready(let models) = status {
+                    self.availableModels = models
+                    if self.selectedModel == nil {
+                        self.selectedModel = Self.selectPreferredModel(from: models)
+                    }
                 }
             }
         }
+    }
+
+    /// Picks a preferred model from the available list, falling back to the first available.
+    private static func selectPreferredModel(from models: [String]) -> String? {
+        let preferred = ["llama2:1b", "gemma3:1b", "gemma3:4b", "mistral:latest", "llama3.2:latest"]
+        for p in preferred {
+            if models.contains(p) { return p }
+        }
+        return models.first
     }
 
     func sendQuery() {
@@ -63,6 +73,10 @@ final class VoltAIViewModel: ObservableObject {
                 let lower = res.lowercased()
                 let isMissingIndex = lower.contains("index file") || lower.contains("does not exist")
                 let isTimeout = lower.contains("[timeout]")
+                let isOllamaUnavailable = lower.contains("connection refused")
+                    || lower.contains("failed to connect")
+                    || lower.contains("could not connect")
+                    || (lower.contains("[process exit") && lower.contains("ollama"))
                 if isMissingIndex {
                     // Fallback: give the user a helpful message and echo their question so UI remains useful
                     let fallback = "I don't have any indexed documents yet. To get document-aware answers, open the Index tab and add files. Meanwhile, here's your question echoed: \(q)"
@@ -71,6 +85,10 @@ final class VoltAIViewModel: ObservableObject {
                 } else if isTimeout {
                     let fallback = "The query timed out. The AI model may be slow or unavailable. Try again or check your Ollama setup."
                     self.messages.append(ChatMessage(role: "assistant", text: fallback))
+                } else if isOllamaUnavailable {
+                    let fallback = "Ollama is not responding. Make sure it is running: open Terminal and run `ollama serve`, then try again."
+                    self.messages.append(ChatMessage(role: "assistant", text: fallback))
+                    self.ollamaStatus = .notRunning
                 } else {
                     self.messages.append(ChatMessage(role: "assistant", text: res))
                 }

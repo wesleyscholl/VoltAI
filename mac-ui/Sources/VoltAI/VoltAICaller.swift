@@ -1,6 +1,18 @@
 import Foundation
 import Darwin
 
+/// Describes the current state of the local Ollama installation.
+enum OllamaStatus: Equatable {
+    /// The `ollama` binary could not be found at any known path.
+    case notInstalled
+    /// The binary exists but `ollama list` exited non-zero — daemon is likely not running.
+    case notRunning
+    /// Daemon is running but no models are installed yet.
+    case noModels
+    /// Daemon is running and at least one model is available.
+    case ready([String])
+}
+
 enum VoltAICaller {
     static func runProcessAsync(launchPath: String, arguments: [String], timeout: TimeInterval = 600.0) async -> String {
         await withCheckedContinuation { continuation in
@@ -117,35 +129,72 @@ enum VoltAICaller {
 
     // Return a list of installed ollama models (names) by parsing `ollama list` output.
     static func listOllamaModels() async -> [String] {
-        // Try to run `ollama list` synchronously but off the main thread
+        let status = await checkOllamaStatus()
+        if case .ready(let models) = status { return models }
+        return []
+    }
+
+    /// Checks whether Ollama is installed, running, and has models available.
+    static func checkOllamaStatus() async -> OllamaStatus {
+        guard let binary = locateOllamaBinary() else { return .notInstalled }
         return await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()
-                p.executableURL = URL(fileURLWithPath: "/usr/local/bin/ollama")
+                p.executableURL = URL(fileURLWithPath: binary)
                 p.arguments = ["list"]
                 let out = Pipe()
+                let err = Pipe()
                 p.standardOutput = out
+                p.standardError = err
                 do {
                     try p.run()
                     p.waitUntilExit()
+                    if p.terminationStatus != 0 {
+                        cont.resume(returning: .notRunning)
+                        return
+                    }
                     let outData = out.fileHandleForReading.readDataToEndOfFile()
                     let s = String(data: outData, encoding: .utf8) ?? ""
-                    var models: [String] = []
-                    for line in s.split(separator: "\n") {
-                        let parts = line.split(separator: " ").map({ String($0) })
-                        if parts.count > 0 {
-                            let name = parts[0]
-                            // skip header lines or empty
-                            if name.lowercased() == "name" { continue }
-                            models.append(name)
-                        }
-                    }
-                    cont.resume(returning: models)
+                    let models = parseOllamaListOutput(s)
+                    cont.resume(returning: models.isEmpty ? .noModels : .ready(models))
                 } catch {
-                    cont.resume(returning: [])
+                    cont.resume(returning: .notRunning)
                 }
             }
         }
+    }
+
+    /// Parses the text output of `ollama list` into a flat array of model name strings.
+    /// Extracted as a pure function so it can be unit-tested without subprocess calls.
+    static func parseOllamaListOutput(_ output: String) -> [String] {
+        var models: [String] = []
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: " ").map { String($0) }
+            guard let name = parts.first, !name.isEmpty else { continue }
+            if name.lowercased() == "name" { continue }
+            models.append(name)
+        }
+        return models
+    }
+
+    /// Locates the `ollama` binary, trying common install paths in priority order.
+    /// Returns nil if no executable is found.
+    private static func locateOllamaBinary() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/ollama",  // Apple Silicon Homebrew (M1/M2/M3)
+            "/usr/local/bin/ollama",     // Intel Homebrew or manual install
+            "/usr/bin/ollama",           // System package manager install
+        ]
+        for path in candidates {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: path, isDirectory: &isDir),
+               !isDir.boolValue,
+               FileManager.default.isExecutableFile(atPath: path)
+            {
+                return path
+            }
+        }
+        return nil
     }
 
     // Try a few reasonable locations for the voltai binary so the UI can find it during development
