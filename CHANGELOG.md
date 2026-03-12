@@ -43,37 +43,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Focus on unit testing pure functions and core business logic
 - Integration tests cover end-to-end indexing workflows
 
-### Planned for v0.9.0 - Cross-Platform Desktop
-**Target:** Q1 2025
+### Planned for v0.9.0 - Core Improvements
+**Target:** Next release
 
 **Features:**
-- Linux support (GTK-based UI)
-- Windows native UI (Win32 API)
-- Unified CLI for all platforms
-- Docker containerization for portability
-- Cross-platform model management
+- Real performance benchmarks with methodology and hardware spec
+- GitHub Actions CI (cargo test on every push)
+- Binary index format to replace JSON for large corpora
+- Stop-word filtering for improved retrieval precision
+- macOS .dmg packaging for one-click install
 
 ### Planned for v1.0.0 - Production Release
-**Target:** Q2 2025
+**Target:** Future milestone
 
 **Features:**
-- Multi-model orchestration (switch models on the fly)
-- Context-aware conversation memory (persistent across sessions)
-- Plugin system for extensibility
+- 90%+ test coverage including Ollama integration paths
+- Homebrew formula for one-command CLI install
+- Embedding-based reranking (two-stage: TF-IDF recall → dense rerank)
 - Comprehensive API documentation
 - Performance benchmarking suite
-- 90%+ test coverage
 
 ### Planned for v2.0.0 - Advanced Features
-**Target:** Q4 2025
+**Target:** Future milestone
 
 **Features:**
-- Multi-modal support (vision, audio input/output)
-- Distributed inference across multiple devices
-- Federated learning experiments
-- Hardware acceleration (CUDA, Metal, ROCm optimization)
-- Advanced RAG pipeline integration
-- Enterprise features (team collaboration, audit logs)
+- Hybrid search (TF-IDF + dense embeddings via Ollama embeddings API)
+- Multi-modal support (vision input via multimodal Ollama models)
+- Hardware acceleration (Metal/CUDA for embedding inference)
+- Advanced RAG pipeline with chunking strategies and rerankers
 
 ---
 
@@ -81,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚡ Optimized Local-First AI Agent
 
-**Status:** Production-quality for macOS/iOS, cross-platform support in progress
+**Status:** Active development — macOS native UI, Rust TF-IDF engine, Ollama integration
 
 ### Added
 

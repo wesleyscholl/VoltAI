@@ -1,7 +1,7 @@
 
 # ⚡️🤖 VoltAI — Fast Local-First AI Agent
 
-**Status**: High-performance Rust+Swift AI assistant with local inference - production-ready for privacy-conscious document analysis workflows.
+**Status**: Fast, privacy-first local document search and summarization. Rust CLI + macOS SwiftUI. Requires Ollama for LLM generation.
 
 <div align="center">
 
@@ -215,21 +215,15 @@ open VoltAI.xcodeproj  # or open the workspace if using SPM
   --directory /path/to/documents \
   --output voltai_index.json
 
-# With options
+# Short flags
 ./target/release/voltai index \
   -d /path/to/documents \
-  -o my_index.json \
-  --exclude-pattern "*.tmp" \
-  --max-file-size 10MB \
-  --verbose
+  -o my_index.json
 ```
 
 **Options:**
 - `-d, --directory <PATH>`: Directory to index (required)
 - `-o, --output <FILE>`: Output index file (default: `voltai_index.json`)
-- `--exclude-pattern <PATTERN>`: Glob pattern for files to skip
-- `--max-file-size <SIZE>`: Skip files larger than this
-- `-v, --verbose`: Enable detailed logging
 
 #### Querying the Index
 
@@ -239,20 +233,25 @@ open VoltAI.xcodeproj  # or open the workspace if using SPM
   --index voltai_index.json \
   --query "summarize the architecture documentation" \
   --top-k 5
-
-# Interactive query mode
-./target/release/voltai query \
-  -i voltai_index.json \
-  --interactive
 ```
 
 **Options:**
 - `-i, --index <FILE>`: Index file to query (required)
-- `-q, --query <TEXT>`: Query text
-- `-k, --top-k <NUM>`: Number of results to return (default: 5)
-- `--interactive`: Enter interactive mode for multiple queries
-- `--show-scores`: Display similarity scores
-- `--format <FORMAT>`: Output format (json, text, markdown)
+- `-q, --query <TEXT>`: Query text (required)
+- `-k, --top-k <NUM>`: Number of top documents to include in context (default: 5)
+- `-m, --model <MODEL>`: Ollama model to use (e.g., `llama3`, `mistral`)
+
+#### Benchmarking
+
+```bash
+./target/release/voltai bench --docs 1000 --queries 50
+```
+
+**Options:**
+- `-d, --docs <N>`: Number of synthetic documents to generate and index (default: 1000)
+- `-q, --queries <N>`: Number of query iterations to average (default: 20)
+
+Generates synthetic documents, indexes them, and measures query latency on your machine. Reports throughput, index size, vocabulary size, and query timing percentiles.
 
 #### Example Output
 
@@ -362,19 +361,18 @@ VoltAI/
 
 #### Rust CLI (`src/`)
 
-**Indexer Module**:
-- `file_walker.rs`: Recursively discovers files
-- `text_extractor.rs`: Extracts text from various formats
-- `tfidf.rs`: Computes TF-IDF vectors using parallel processing
+The entire Rust implementation lives in `src/main.rs`, which contains:
 
-**Query Module**:
-- `search.rs`: Implements cosine similarity search
-- `summarizer.rs`: Optional LLM-based summarization
+- **File walking**: Recursively discovers `.txt`, `.md`, `.csv`, `.json`, `.pdf` files
+- **Text extraction**: Reads plain text and extracts text from PDFs via `pdf-extract`
+- **TF-IDF indexing**: Computes log-TF × IDF vectors with L2 normalization using parallel processing
+- **Search**: Dot product against pre-normalized document vectors (equivalent to cosine similarity)
+- **Summarization**: Routes top-k context to an Ollama model for LLM generation; falls back to keyword extraction if Ollama is unavailable
 
 **Design Principles**:
-- Modular architecture for easy extension
-- Parallel processing with `rayon` for performance
-- Clear separation between indexing and querying
+- Single-binary deployment — no Python, no separate server
+- Parallel processing with `rayon` for indexing performance
+- Zero network calls during indexing or search
 
 #### macOS UI (`mac-ui/`)
 
@@ -721,19 +719,29 @@ Copyright (c) 2025 Wesley Scholl
 <a id="project-status"></a>
 ## 📊 Project Status
 
-**Current State:** Production-quality local-first AI agent with blazing-fast document retrieval  
-**Tech Stack:** Rust (TF-IDF engine), Swift (macOS UI), PDF extraction, parallel processing  
-**Performance:** Multi-threaded indexing, instant similarity search, native macOS experience
+**Current State:** Local document search prototype with TF-IDF retrieval and Ollama LLM generation
+**Tech Stack:** Rust (TF-IDF engine), Swift (macOS UI), PDF extraction, parallel processing
+**Performance:** Multi-threaded indexing with Rayon, dot-product search over pre-normalized vectors
 
-VoltAI is the fastest way to search and analyze local documents with complete privacy. Zero cloud dependencies, enterprise-grade security, lightning-fast TF-IDF search that scales to millions of documents.
+VoltAI indexes local files and routes queries through a locally-installed Ollama model. Zero cloud dependencies. Indexes your files in seconds, never transmits data off-device.
 
-### Performance Metrics
+### Performance
 
-- **Indexing Speed:** 10,000+ documents/minute (Rayon parallel processing)
-- **Search Latency:** Sub-100ms cosine similarity search
-- **Memory Usage:** ~100MB for 50,000 document index
+Run the built-in benchmark on your own hardware to get real numbers:
+
+```bash
+cargo build --release
+./target/release/voltai bench --docs 1000 --queries 50
+```
+
+This generates 1,000 synthetic documents, indexes them, and measures query latency — reporting throughput (docs/sec), index size, vocabulary size, and query p50/p95 in microseconds. Use `--docs 5000` for a larger corpus.
+
+> Always benchmark the `--release` binary. The debug build is significantly slower due to unoptimized code.
+
+**Index size caveat:** The index is stored as JSON. The file size scales with `corpus_size × vocabulary_size`. For very large corpora (10K+ documents), the JSON index can become large; a binary index format is a planned improvement.
+
 - **File Format Support:** TXT, MD, PDF, CSV, JSON extraction
-- **Privacy Score:** 100% (zero network calls, local-only processing)
+- **Privacy:** 100% local — zero network calls during indexing or search
 
 ### Recent Achievements
 
@@ -743,28 +751,28 @@ VoltAI is the fastest way to search and analyze local documents with complete pr
 - ✅ **Safety Measures:** Prevents accidental data exposure in logs/prompts
 - ✅ **JSON Serialization:** Compact index format with metadata preservation
 
-### 2026-2027 Roadmap
+### Roadmap
 
-**Q1 2026 – Vector Embeddings**
+**Near-term – Vector Embeddings**
 - Dense embedding pipeline with local LLM integration
 - Two-stage search (TF-IDF → embeddings refinement)
 - Qdrant/Chroma vector database backend options
 - Semantic similarity vs lexical matching benchmarks
 
-**Q2 2026 – Platform Expansion** 
+**Medium-term – Platform Expansion**
 - Linux desktop via Tauri (Rust + TypeScript)
 - Windows native with WinUI 3
 - Docker containers for server deployments
 - Cloud-sync with end-to-end encryption options
 
-**Q3 2026 – Enterprise Features**
+**Longer-term – Enterprise Features**
 - Multi-tenant document isolation
 - Role-based access controls
 - Audit logging and compliance tools
 - Active Directory/LDAP integration
 - Advanced deduplication algorithms
 
-**Q4 2026 – AI-Powered Analysis**
+**Future – AI-Powered Analysis**
 - Document clustering and auto-categorization  
 - Timeline extraction from document sets
 - Multi-document summarization
@@ -804,7 +812,7 @@ VoltAI is the fastest way to search and analyze local documents with complete pr
 
 **Rust Performance:** Multi-threaded indexing, zero-copy string processing, memory-efficient data structures.
 
-**Production-Ready:** Handles enterprise document volumes with graceful error handling and robust file format support.
+**Local-First Architecture:** Single Rust binary handles indexing and retrieval. No server to run, no Python environment to manage.
 
 **Developer-First:** Clean architecture, extensive documentation, plugin-ready design for custom extractors.
 
