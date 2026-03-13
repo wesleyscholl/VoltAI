@@ -11,7 +11,7 @@ env:
 
 jobs:
   test:
-    name: Test
+    name: Test (Rust)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +21,7 @@ jobs:
         run: cargo test --all
 
   lint:
-    name: Lint
+    name: Lint (Rust)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,3 +33,42 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+  swift-test:
+    name: Test (Swift)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Swift package
+        run: swift build --package-path mac-ui
+      - name: Run Swift tests
+        run: swift test --package-path mac-ui
+
+  package:
+    name: Package macOS DMG
+    runs-on: macos-latest
+    # Only produce artefacts on pushes to main, not on pull requests.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, lint, swift-test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Rust release binary
+        run: cargo build --release
+      - name: Create DMG
+        run: |
+          mkdir -p dmg-staging
+          cp target/release/voltai dmg-staging/voltai
+          hdiutil create \
+            -volname "VoltAI" \
+            -srcfolder dmg-staging \
+            -ov \
+            -format UDZO \
+            voltai-macos.dmg
+      - name: Upload DMG artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: voltai-macos-dmg
+          path: voltai-macos.dmg
+          retention-days: 30

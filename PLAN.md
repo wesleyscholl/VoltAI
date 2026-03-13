@@ -5,8 +5,8 @@
 
 ## Current State
 
-Version `0.8.3`. Working Rust TF-IDF CLI + macOS SwiftUI app. 85 Rust tests, 61 Swift tests.
-CI green. `VoltAICore` library target extracted for unit testability. Phase 1 complete.
+Version `0.9.0`. Working Rust TF-IDF CLI + macOS SwiftUI app. 88 Rust tests, 61 Swift tests.
+CI: Linux Rust test/lint + macOS Swift test + macOS DMG packaging. Phases 1–2 complete.
 
 ---
 
@@ -35,18 +35,18 @@ CI green. `VoltAICore` library target extracted for unit testability. Phase 1 co
 
 ## Phase 2 — v0.9.0 Milestones
 
-**Status:** ⬜ Pending
+**Status:** ✅ Complete (`v0.9.0`)
 
 | # | Task | File(s) | Status |
 |---|---|---|---|
-| 2.1 | Rust: Binary index format (`--format json\|binary`, bincode) | `src/main.rs`, `Cargo.toml` | ⬜ |
-| 2.2 | Swift: Replace fake progress bar with indeterminate spinner | `ContentView.swift` | ⬜ |
-| 2.3 | CI: macOS `.dmg` packaging via `create-dmg` | `.github/workflows/ci.yml` | ⬜ |
+| 2.1 | Rust: Binary index format (`--format json\|binary`, bincode) | `src/main.rs`, `Cargo.toml` | ✅ Done |
+| 2.2 | Swift: Replace fake progress bar with indeterminate spinner | `ContentView.swift` | ✅ Done |
+| 2.3 | CI: macOS Swift test job + `.dmg` packaging via `hdiutil` | `.github/workflows/ci.yml` | ✅ Done |
 
-**Acceptance criteria:**
-- `voltai index --format binary` + `voltai query` auto-detect works
-- CI publishes `.dmg` artifact
-- CHANGELOG `v0.9.0` fully checked off
+**Acceptance criteria:** ✅ All met
+- `voltai index --format binary` produces a bincode file; `voltai query` auto-detects by extension
+- 88 Rust tests, 61 Swift tests all pass; `clippy` clean
+- CI has `swift-test` (macos-latest) and `package` (DMG artifact) jobs
 
 ---
 

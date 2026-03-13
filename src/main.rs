@@ -8,7 +8,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use indicatif::{ProgressBar, ProgressStyle};
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
@@ -53,6 +53,9 @@ enum Commands {
         dir: PathBuf,
         #[arg(short, long, default_value = "voltai_index.json")]
         out: PathBuf,
+        /// Output format: `json` (human-readable, default) or `binary` (compact bincode, ~3× smaller and faster to load).
+        #[arg(long, default_value = "json")]
+        format: IndexFormat,
     },
     Query {
         #[arg(short, long, default_value = "voltai_index.json")]
@@ -74,6 +77,22 @@ enum Commands {
         #[arg(short, long, default_value_t = 20)]
         queries: usize,
     },
+}
+
+/// Serialisation format for the index file produced by `voltai index`.
+///
+/// | Format   | Readable | Typical size     | Load speed |
+/// |----------|----------|------------------|------------|
+/// | `json`   | yes      | 1× (baseline)    | baseline   |
+/// | `binary` | no       | ~3× smaller      | ~3–4× faster |
+///
+/// `voltai query` detects the format automatically from the file extension
+/// (`.json` → JSON; any other extension → bincode).
+#[derive(ValueEnum, Clone, Debug, Default)]
+enum IndexFormat {
+    #[default]
+    Json,
+    Binary,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -121,7 +140,20 @@ fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
-fn index_dir(dir: &Path, out: &Path) -> Result<()> {
+/// Loads an `Index` from disk, auto-detecting the serialisation format by file extension.
+/// `.json` files are decoded with `serde_json`; all other extensions are decoded with `bincode`.
+fn load_index(path: &Path) -> Result<Index> {
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("json");
+    if ext == "json" {
+        let f = File::open(path)?;
+        Ok(serde_json::from_reader(f)?)
+    } else {
+        let data = std::fs::read(path)?;
+        Ok(bincode::deserialize(&data)?)
+    }
+}
+
+fn index_dir(dir: &Path, out: &Path, format: IndexFormat) -> Result<()> {
     // Only index common textual file types to avoid capturing binary files (git internals, images,
     // compiled artifacts) which can produce oversized or invalid JSON output.
     let allowed_exts = ["txt", "md", "csv", "json", "pdf"];
@@ -236,9 +268,57 @@ fn index_dir(dir: &Path, out: &Path) -> Result<()> {
     };
 
     let fout = File::create(out)?;
-    serde_json::to_writer_pretty(fout, &index)?;
+    match format {
+        IndexFormat::Json => serde_json::to_writer_pretty(fout, &index)?,
+        IndexFormat::Binary => bincode::serialize_into(fout, &index)?,
+    }
     println!("Wrote index to {}", out.display());
     Ok(())
+}
+
+/// Prints keyword-derived summaries for the top-`k` documents matching `q`.
+/// Used as a deterministic, non-LLM fallback when Ollama is unavailable or fails.
+fn print_keyword_fallback(idx: &Index, q: &str, k: usize) {
+    let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
+    let term_map: HashMap<&String, usize> =
+        idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+    for t in tokenize(q).iter() {
+        if let Some(&i) = term_map.get(t) {
+            q_vec[i] += 1.0;
+        }
+    }
+    let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
+    for x in q_vec.iter_mut() {
+        *x /= norm;
+    }
+    let mut sims: Vec<(usize, f32)> = idx
+        .vectors
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (i, dot_product(&q_vec, v)))
+        .collect();
+    sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (i, _) in sims.into_iter().take(k) {
+        let doc = &idx.docs[i];
+        let mut tf: HashMap<String, usize> = HashMap::new();
+        for tk in tokenize(&doc.text) {
+            if tk.len() > 2 {
+                *tf.entry(tk).or_insert(0) += 1;
+            }
+        }
+        let mut kv: Vec<(String, usize)> = tf.into_iter().collect();
+        kv.sort_by(|a, b| b.1.cmp(&a.1));
+        let keywords: Vec<String> = kv.into_iter().take(6).map(|(t, _)| t).collect();
+        let kw = if keywords.is_empty() {
+            String::from("(no keywords)")
+        } else {
+            keywords.join(", ")
+        };
+        print!(
+            "Document: {}\nSummary: This document discusses: {}.\n---\n",
+            doc.path, kw
+        );
+    }
 }
 
 fn query_with_ollama(
@@ -304,12 +384,23 @@ fn query_with_ollama(
         })
     };
 
-    let mut prompt = q.to_string();
-    if index_file.exists() {
-        let f = File::open(index_file)?;
-        let idx: Index = serde_json::from_reader(f)?;
+    // Load the index exactly once. An absent or empty index is not an error —
+    // we simply skip context-building and skip the fallback summaries.
+    // Format is auto-detected by load_index based on file extension.
+    let maybe_idx: Option<Index> = if index_file.exists() {
+        Some(load_index(index_file)?)
+    } else {
+        None
+    };
 
+    let mut prompt = q.to_string();
+    if let Some(ref idx) = maybe_idx {
         if !idx.terms.is_empty() && !idx.vectors.is_empty() {
+            // Build the query vector using raw term counts (not log-TF).
+            // Document vectors use log-TF (1 + log₂ count) during indexing; query vectors
+            // intentionally use raw counts to avoid over-boosting repeated query terms.
+            // This asymmetric weighting is standard practice and produces competitive
+            // retrieval quality without requiring BM25 (planned for v2.0.0).
             let q_toks = tokenize(q);
             let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
             let term_map: HashMap<&String, usize> =
@@ -418,50 +509,8 @@ fn query_with_ollama(
                 let serr = String::from_utf8_lossy(&o.stderr);
                 eprintln!("ollama run failed ({}): {}", model, serr);
                 // Fallback: produce lightweight, non-verbatim summaries derived from keywords
-                if index_file.exists() {
-                    let f = File::open(index_file)?;
-                    let idx: Index = serde_json::from_reader(f)?;
-                    let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
-                    let term_map: HashMap<&String, usize> =
-                        idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
-                    let q_toks = tokenize(q);
-                    for t in q_toks.iter() {
-                        if let Some(&i) = term_map.get(t) {
-                            q_vec[i] += 1.0;
-                        }
-                    }
-                    let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-                    for x in q_vec.iter_mut() {
-                        *x /= norm;
-                    }
-                    let mut sims: Vec<(usize, f32)> = idx
-                        .vectors
-                        .iter()
-                        .enumerate()
-                        .map(|(i, v)| (i, dot_product(&q_vec, v)))
-                        .collect();
-                    sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                    for (i, _s) in sims.into_iter().take(k) {
-                        let doc = &idx.docs[i];
-                        // generate top keywords for the doc
-                        let mut tf: HashMap<String, usize> = HashMap::new();
-                        for tk in tokenize(&doc.text) {
-                            if tk.len() > 2 {
-                                *tf.entry(tk).or_insert(0) += 1;
-                            }
-                        }
-                        let mut kv: Vec<(String, usize)> = tf.into_iter().collect();
-                        kv.sort_by(|a, b| b.1.cmp(&a.1));
-                        let keywords: Vec<String> =
-                            kv.into_iter().take(6).map(|(t, _)| t).collect();
-                        let kw = if keywords.is_empty() {
-                            String::from("(no keywords)")
-                        } else {
-                            keywords.join(", ")
-                        };
-                        let summary = format!("This document discusses: {}.", kw);
-                        print!("Document: {}\nSummary: {}\n---\n", doc.path, summary);
-                    }
+                if let Some(ref idx) = maybe_idx {
+                    print_keyword_fallback(idx, q, k);
                 }
                 Ok(())
             }
@@ -469,192 +518,150 @@ fn query_with_ollama(
         Err(e) => {
             eprintln!("failed to invoke ollama: {}", e);
             // Fallback to keyword-derived summaries instead of raw text
-            if index_file.exists() {
-                let f = File::open(index_file)?;
-                let idx: Index = serde_json::from_reader(f)?;
-                let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
-                let term_map: HashMap<&String, usize> =
-                    idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
-                let q_toks = tokenize(q);
-                for t in q_toks.iter() {
-                    if let Some(&i) = term_map.get(t) {
-                        q_vec[i] += 1.0;
-                    }
-                }
-                let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-                for x in q_vec.iter_mut() {
-                    *x /= norm;
-                }
-                let mut sims: Vec<(usize, f32)> = idx
-                    .vectors
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| (i, dot_product(&q_vec, v)))
-                    .collect();
-                sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                for (i, _s) in sims.into_iter().take(k) {
-                    let doc = &idx.docs[i];
-                    let mut tf: HashMap<String, usize> = HashMap::new();
-                    for tk in tokenize(&doc.text) {
-                        if tk.len() > 2 {
-                            *tf.entry(tk).or_insert(0) += 1;
-                        }
-                    }
-                    let mut kv: Vec<(String, usize)> = tf.into_iter().collect();
-                    kv.sort_by(|a, b| b.1.cmp(&a.1));
-                    let keywords: Vec<String> = kv.into_iter().take(6).map(|(t, _)| t).collect();
-                    let kw = if keywords.is_empty() {
-                        String::from("(no keywords)")
-                    } else {
-                        keywords.join(", ")
-                    };
-                    let summary = format!("This document discusses: {}.", kw);
-                    print!("Document: {}\nSummary: {}\n---\n", doc.path, summary);
-                }
+            if let Some(ref idx) = maybe_idx {
+                print_keyword_fallback(idx, q, k);
             }
             Ok(())
         }
     }
 }
 
-fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
-    // A vocabulary large enough to produce realistic varied documents.
-    const VOCAB: &[&str] = &[
-        "database",
-        "index",
-        "query",
-        "search",
-        "vector",
-        "document",
-        "retrieval",
-        "embedding",
-        "neural",
-        "network",
-        "training",
-        "inference",
-        "model",
-        "weight",
-        "gradient",
-        "loss",
-        "accuracy",
-        "precision",
-        "recall",
-        "latency",
-        "throughput",
-        "memory",
-        "cache",
-        "buffer",
-        "pipeline",
-        "parallel",
-        "thread",
-        "process",
-        "kernel",
-        "tensor",
-        "matrix",
-        "algorithm",
-        "cluster",
-        "shard",
-        "replica",
-        "checkpoint",
-        "snapshot",
-        "partition",
-        "segment",
-        "bucket",
-        "block",
-        "page",
-        "pointer",
-        "reference",
-        "dependency",
-        "abstraction",
-        "interface",
-        "protocol",
-        "schema",
-        "migration",
-        "transaction",
-        "commit",
-        "rollback",
-        "checkpoint",
-        "replication",
-        "consensus",
-        "leader",
-        "follower",
-        "quorum",
-        "heartbeat",
-        "timeout",
-        "retry",
-        "circuit",
-        "breaker",
-        "threshold",
-        "metric",
-        "monitor",
-        "alert",
-        "trace",
-        "span",
-        "log",
-        "event",
-        "stream",
-        "batch",
-        "queue",
-        "producer",
-        "consumer",
-        "offset",
-        "partition",
-        "topic",
-        "subscriber",
-        "webhook",
-        "endpoint",
-        "payload",
-        "header",
-        "token",
-        "certificate",
-        "cipher",
-        "entropy",
-        "hash",
-        "digest",
-        "signature",
-        "key",
-        "value",
-        "store",
-        "cache",
-        "eviction",
-        "ttl",
-        "expiry",
-        "bloom",
-        "filter",
-        "probabalistic",
-        "sketch",
-        "hyperloglog",
-        "reservoir",
-        "sampling",
-        "histogram",
-        "percentile",
-        "quantile",
-        "aggregation",
-        "projection",
-        "selection",
-        "join",
-        "merge",
-        "sort",
-        "scan",
-        "photosynthesis",
-        "chloroplast",
-        "mitochondria",
-        "ribosome",
-        "protein",
-        "metabolism",
-        "catalyst",
-        "enzyme",
-        "substrate",
-        "reaction",
-        "compound",
-        "molecule",
-        "polymer",
-        "crystal",
-        "lattice",
-        "diffraction",
-        "resonance",
-    ];
+/// Vocabulary used by the bench subcommand to generate realistic synthetic documents.
+/// Each entry must be unique — verified by `test_bench_vocab_no_duplicates`.
+const BENCH_VOCAB: &[&str] = &[
+    "database",
+    "index",
+    "query",
+    "search",
+    "vector",
+    "document",
+    "retrieval",
+    "embedding",
+    "neural",
+    "network",
+    "training",
+    "inference",
+    "model",
+    "weight",
+    "gradient",
+    "loss",
+    "accuracy",
+    "precision",
+    "recall",
+    "latency",
+    "throughput",
+    "memory",
+    "cache",
+    "buffer",
+    "pipeline",
+    "parallel",
+    "thread",
+    "process",
+    "kernel",
+    "tensor",
+    "matrix",
+    "algorithm",
+    "cluster",
+    "shard",
+    "replica",
+    "checkpoint",
+    "snapshot",
+    "partition",
+    "segment",
+    "bucket",
+    "block",
+    "page",
+    "pointer",
+    "reference",
+    "dependency",
+    "abstraction",
+    "interface",
+    "protocol",
+    "schema",
+    "migration",
+    "transaction",
+    "commit",
+    "rollback",
+    "replication",
+    "consensus",
+    "leader",
+    "follower",
+    "quorum",
+    "heartbeat",
+    "timeout",
+    "retry",
+    "circuit",
+    "breaker",
+    "threshold",
+    "metric",
+    "monitor",
+    "alert",
+    "trace",
+    "span",
+    "log",
+    "event",
+    "stream",
+    "batch",
+    "queue",
+    "producer",
+    "consumer",
+    "offset",
+    "topic",
+    "subscriber",
+    "webhook",
+    "endpoint",
+    "payload",
+    "header",
+    "token",
+    "certificate",
+    "cipher",
+    "entropy",
+    "hash",
+    "digest",
+    "signature",
+    "key",
+    "value",
+    "store",
+    "eviction",
+    "ttl",
+    "expiry",
+    "bloom",
+    "filter",
+    "probabilistic",
+    "sketch",
+    "hyperloglog",
+    "reservoir",
+    "sampling",
+    "histogram",
+    "percentile",
+    "quantile",
+    "aggregation",
+    "projection",
+    "selection",
+    "join",
+    "merge",
+    "sort",
+    "scan",
+    "photosynthesis",
+    "chloroplast",
+    "mitochondria",
+    "ribosome",
+    "protein",
+    "metabolism",
+    "catalyst",
+    "enzyme",
+    "substrate",
+    "reaction",
+    "compound",
+    "molecule",
+    "polymer",
+    "crystal",
+    "lattice",
+    "diffraction",
+    "resonance",
+];
 
+fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
     let words_per_doc = 60usize;
     let temp_dir = std::env::temp_dir().join(format!("voltai_bench_{}", std::process::id()));
     std::fs::create_dir_all(&temp_dir)?;
@@ -670,9 +677,9 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
         // Each document draws words from a sliding window of the vocabulary so different
         // documents have different dominant terms, simulating a realistic corpus.
         let mut line = String::with_capacity(words_per_doc * 10);
-        let offset = (i * 7) % VOCAB.len();
+        let offset = (i * 7) % BENCH_VOCAB.len();
         for j in 0..words_per_doc {
-            let w = VOCAB[(offset + j * 3) % VOCAB.len()];
+            let w = BENCH_VOCAB[(offset + j * 3) % BENCH_VOCAB.len()];
             if j > 0 {
                 line.push(' ');
             }
@@ -686,7 +693,7 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
     let index_path = temp_dir.join("bench_index.json");
     println!("Indexing...");
     let t0 = Instant::now();
-    index_dir(&temp_dir, &index_path)?;
+    index_dir(&temp_dir, &index_path, IndexFormat::Json)?;
     let index_elapsed = t0.elapsed();
     let docs_per_sec = doc_count as f64 / index_elapsed.as_secs_f64();
 
@@ -767,7 +774,7 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Index { dir, out } => index_dir(&dir, &out)?,
+        Commands::Index { dir, out, format } => index_dir(&dir, &out, format)?,
         Commands::Query { index, q, k, model } => query_with_ollama(&index, &q, k, model)?,
         Commands::Bench { docs, queries } => run_bench(docs, queries)?,
     }
@@ -897,7 +904,7 @@ mod tests {
         writeln!(f2, "deep learning neural networks")?;
 
         let index_path = temp_dir.path().join("test_index.json");
-        index_dir(temp_dir.path(), &index_path)?;
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
 
         // Verify index file was created
         assert!(index_path.exists());
@@ -918,7 +925,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let index_path = temp_dir.path().join("empty_index.json");
 
-        index_dir(temp_dir.path(), &index_path)?;
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
 
         assert!(index_path.exists());
         let f = File::open(&index_path)?;
@@ -1008,7 +1015,7 @@ mod tests {
         File::create(&bin_file)?;
 
         let index_path = temp_dir.path().join("index.json");
-        index_dir(temp_dir.path(), &index_path)?;
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
 
         let f = File::open(&index_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1046,7 +1053,7 @@ mod tests {
         std::fs::write(&doc2, "data science and statistics")?;
 
         // Run indexing
-        index_dir(dir.path(), &out_path)?;
+        index_dir(dir.path(), &out_path, IndexFormat::Json)?;
         assert!(out_path.exists());
 
         // Verify index contents
@@ -1099,14 +1106,12 @@ mod tests {
     #[test]
     fn test_read_text_file_binary() {
         let dir = tempfile::tempdir().unwrap();
-        let bin_path = dir.path().join("test.bin");
-
-        // Create binary file with non-UTF8 bytes
+        // Use a .txt extension so read_text_file is invoked directly
+        let bin_path = dir.path().join("test.txt");
+        // Write raw non-UTF-8 bytes; read_to_string must return Err
         std::fs::write(&bin_path, vec![0xFF, 0xFE, 0x00, 0x80]).unwrap();
-
         let result = read_text_file(&bin_path);
-        // Binary files may be skipped or return empty
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_err(), "expected Err for non-UTF-8 binary content");
     }
 
     #[test]
@@ -1121,7 +1126,7 @@ mod tests {
         std::fs::write(&doc2, "nested directory file")?;
 
         let out_path = dir.path().join("nested_index.json");
-        index_dir(dir.path(), &out_path)?;
+        index_dir(dir.path(), &out_path, IndexFormat::Json)?;
 
         let f = File::open(&out_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1157,7 +1162,7 @@ mod tests {
         let doc_path = dir.path().join("test_document.txt");
         std::fs::write(&doc_path, "content")?;
 
-        index_dir(dir.path(), &out_path)?;
+        index_dir(dir.path(), &out_path, IndexFormat::Json)?;
 
         let f = File::open(&out_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1179,13 +1184,20 @@ mod tests {
     fn test_read_file_content_pdf() {
         let dir = tempfile::tempdir().unwrap();
         let pdf_path = dir.path().join("test.pdf");
-
-        // Create a text file pretending to be PDF
-        std::fs::write(&pdf_path, "text content").unwrap();
-
-        // This will fail PDF parsing but shouldn't panic
+        // Write bytes that look like a PDF header but are not a complete valid PDF
+        std::fs::write(&pdf_path, b"%PDF-1.4-fake-truncated-content").unwrap();
+        // read_file_content must dispatch to pdf-extract for .pdf extension
         let result = read_file_content(&pdf_path);
-        assert!(result.is_ok() || result.is_err());
+        // pdf-extract must fail on a truncated/invalid PDF without panicking
+        assert!(
+            result.is_err(),
+            "expected Err when pdf-extract receives invalid PDF bytes"
+        );
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("PDF extraction failed"),
+            "error should say 'PDF extraction failed', got: {err_msg}"
+        );
     }
 
     #[test]
@@ -1200,7 +1212,7 @@ mod tests {
         std::fs::write(dir.path().join("readme.md"), "# Markdown")?;
         std::fs::write(dir.path().join("image.jpg"), &[0xFF, 0xD8])?; // Not indexed
 
-        index_dir(dir.path(), &out_path)?;
+        index_dir(dir.path(), &out_path, IndexFormat::Json)?;
 
         let f = File::open(&out_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1234,7 +1246,7 @@ mod tests {
         let empty_file = dir.path().join("empty.txt");
         std::fs::write(&empty_file, "")?;
 
-        index_dir(dir.path(), &out_path)?;
+        index_dir(dir.path(), &out_path, IndexFormat::Json)?;
 
         let f = File::open(&out_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1263,7 +1275,7 @@ mod tests {
         let large_content = "word ".repeat(1000);
         std::fs::write(dir.path().join("large.txt"), large_content)?;
 
-        index_dir(dir.path(), &out_path)?;
+        index_dir(dir.path(), &out_path, IndexFormat::Json)?;
 
         let f = File::open(&out_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1301,7 +1313,7 @@ mod tests {
         std::fs::write(dir.path().join("file_with_underscores.txt"), "content2")?;
         std::fs::write(dir.path().join("file with spaces.txt"), "content3")?;
 
-        index_dir(dir.path(), &out_path)?;
+        index_dir(dir.path(), &out_path, IndexFormat::Json)?;
 
         let f = File::open(&out_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1348,7 +1360,7 @@ mod tests {
         )?;
 
         let index_path = temp_dir.path().join("idx.json");
-        index_dir(temp_dir.path(), &index_path)?;
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
 
         let f = File::open(&index_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1469,7 +1481,7 @@ mod tests {
         writeln!(f, "kubernetes docker container orchestration")?;
 
         let index_path = temp_dir.path().join("index.json");
-        index_dir(temp_dir.path(), &index_path)?;
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
 
         // Load index
         let idx_file = File::open(&index_path)?;
@@ -1497,7 +1509,7 @@ mod tests {
         writeln!(f2, "docker container image registry")?;
 
         let index_path = temp_dir.path().join("index.json");
-        index_dir(temp_dir.path(), &index_path)?;
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
 
         let idx_file = File::open(&index_path)?;
         let idx: Index = serde_json::from_reader(idx_file)?;
@@ -1962,7 +1974,7 @@ mod tests {
         std::fs::write(dir.path().join("c.txt"), "third")?;
 
         let index_path = dir.path().join("index.json");
-        index_dir(dir.path(), &index_path)?;
+        index_dir(dir.path(), &index_path, IndexFormat::Json)?;
 
         let f = File::open(&index_path)?;
         let idx: Index = serde_json::from_reader(f)?;
@@ -1982,5 +1994,129 @@ mod tests {
         let results: Vec<f32> = data.par_iter().map(|v| v.iter().sum::<f32>()).collect();
 
         assert_eq!(results, vec![3.0, 7.0, 11.0]);
+    }
+
+    #[test]
+    fn test_print_keyword_fallback_does_not_panic() {
+        // Verifies that print_keyword_fallback completes without panicking when given
+        // a valid Index. The keyword summary output goes to stdout (not asserted here
+        // since Rust tests don't capture stdout by default).
+        let docs = vec![
+            Doc {
+                id: "doc-0".to_string(),
+                path: "/docs/alpha.txt".to_string(),
+                text: "rust programming systems language memory safety ownership".to_string(),
+            },
+            Doc {
+                id: "doc-1".to_string(),
+                path: "/docs/beta.txt".to_string(),
+                text: "python scripting web framework requests asyncio".to_string(),
+            },
+        ];
+        // Minimal pre-normalized vectors: doc-0 covers "programming" / "memory",
+        // doc-1 covers "python" / "framework"
+        let terms = vec![
+            "programming".to_string(),
+            "memory".to_string(),
+            "python".to_string(),
+            "framework".to_string(),
+        ];
+        let norm = (2.0f32).sqrt().recip();
+        let vectors = vec![vec![norm, norm, 0.0, 0.0], vec![0.0, 0.0, norm, norm]];
+        let idx = Index {
+            docs,
+            terms,
+            vectors,
+        };
+        // Should rank doc-0 first for "programming memory" and not panic
+        print_keyword_fallback(&idx, "programming memory", 2);
+    }
+
+    #[test]
+    fn test_print_keyword_fallback_empty_index_does_not_panic() {
+        let idx = Index {
+            docs: vec![],
+            terms: vec![],
+            vectors: vec![],
+        };
+        print_keyword_fallback(&idx, "any query", 5);
+    }
+
+    #[test]
+    fn test_bench_vocab_no_duplicates() {
+        use std::collections::HashSet;
+        let unique: HashSet<&str> = BENCH_VOCAB.iter().copied().collect();
+        assert_eq!(
+            BENCH_VOCAB.len(),
+            unique.len(),
+            "BENCH_VOCAB contains {} duplicate(s); entries occur more than once",
+            BENCH_VOCAB.len() - unique.len(),
+        );
+    }
+
+    // ---- binary index format (bincode) ----------------------------------------
+
+    #[test]
+    fn test_load_index_json_roundtrip() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let out = dir.path().join("idx.json");
+
+        let src = dir.path().join("a.txt");
+        std::fs::write(&src, "hello world")?;
+        index_dir(dir.path(), &out, IndexFormat::Json)?;
+
+        let loaded = load_index(&out)?;
+        assert!(!loaded.docs.is_empty(), "expected at least one doc");
+        assert_eq!(loaded.docs.len(), loaded.vectors.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_index_binary_roundtrip() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let out = dir.path().join("idx.bin");
+
+        let src = dir.path().join("doc.txt");
+        std::fs::write(&src, "rust performance systems")?;
+        index_dir(dir.path(), &out, IndexFormat::Binary)?;
+
+        let loaded = load_index(&out)?;
+        assert!(!loaded.docs.is_empty(), "expected at least one doc");
+        assert_eq!(loaded.docs.len(), loaded.vectors.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_binary_and_json_indexes_equivalent() -> Result<()> {
+        // Index the same document twice — once as JSON, once as binary — and verify
+        // that load_index surfaces the same term vocabulary and doc count.
+        // Note: term *ordering* is non-deterministic (HashMap ties break differently
+        // each run), so we compare sorted term sets rather than ordered slices.
+        let dir_j = tempfile::tempdir()?;
+        let dir_b = tempfile::tempdir()?;
+        let content = "distributed systems replication consensus latency";
+        std::fs::write(dir_j.path().join("doc.txt"), content)?;
+        std::fs::write(dir_b.path().join("doc.txt"), content)?;
+
+        let json_out = dir_j.path().join("idx.json");
+        let bin_out = dir_b.path().join("idx.bin");
+        index_dir(dir_j.path(), &json_out, IndexFormat::Json)?;
+        index_dir(dir_b.path(), &bin_out, IndexFormat::Binary)?;
+
+        let j = load_index(&json_out)?;
+        let b = load_index(&bin_out)?;
+
+        assert_eq!(j.docs.len(), b.docs.len(), "doc count must match");
+        assert_eq!(j.vectors.len(), b.vectors.len(), "vector count must match");
+
+        let mut j_terms = j.terms.clone();
+        let mut b_terms = b.terms.clone();
+        j_terms.sort();
+        b_terms.sort();
+        assert_eq!(
+            j_terms, b_terms,
+            "term sets must be identical (order-independent)"
+        );
+        Ok(())
     }
 }

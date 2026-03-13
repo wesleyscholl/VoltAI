@@ -345,14 +345,15 @@ struct ContentView: View {
                 }
 
                 if vm.isIndexing {
-                    VStack(spacing: 8) {
-                        ProgressView(vm.progressMessage, value: vm.progress, total: 1.0)
-                            .progressViewStyle(.linear)
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
                             .tint(Color(red: 0.11, green: 0.56, blue: 0.8))
                         Text(vm.progressMessage)
-                            .font(.caption)
+                            .font(.system(size: 13))
                             .foregroundColor(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
                 }
 
