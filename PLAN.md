@@ -5,8 +5,8 @@
 
 ## Current State
 
-Version `1.0.0`. Working BM25 Rust CLI + macOS SwiftUI app. 93 Rust tests, 75 Swift tests.
-CI: Linux Rust test/lint + macOS Swift test + macOS DMG packaging + coverage reporting. Phases 1–4 complete.
+Version `1.0.0`. Working BM25 Rust CLI + macOS SwiftUI app. 92 Rust tests, 75 Swift tests.
+CI: Linux Rust test/lint + macOS Swift test + macOS DMG packaging + coverage reporting with enforced thresholds (Rust ≥90%, Swift ≥85%). Phases 1–5 complete.
 
 ---
 
@@ -89,6 +89,26 @@ CI: Linux Rust test/lint + macOS Swift test + macOS DMG packaging + coverage rep
 - BM25 replaces TF-IDF; O(T) inverted-index query replaces O(n·V) linear scan
 - 93 Rust tests, 75 Swift tests; clippy clean
 - ROADMAP `v1.0.0` and `v2.0.0` (BM25 + inverted index) items checked off
+
+---
+
+## Phase 5 — CI Quality Gates & Code Health
+
+**Status:** ✅ Complete
+
+| # | Task | File(s) | Status |
+|---|---|---|---|
+| 5.1 | CI: `--fail-under 90` for cargo-tarpaulin | `.github/workflows/ci.yml` | ✅ Done |
+| 5.2 | CI: Swift llvm-cov artifact + 85% threshold | `.github/workflows/ci.yml` | ✅ Done |
+| 5.3 | Rust: Extract `build_prompt()` from `query_with_ollama` | `src/main.rs` | ✅ Done |
+| 5.4 | Rust: Replace 4 stdlib-noise tests with 3 behavioural tests | `src/main.rs` | ✅ Done |
+| 5.5 | Rust: Rename bench label to "BM25 inverted-index" | `src/main.rs` | ✅ Done |
+
+**Acceptance criteria:** ✅ All met
+- 92 Rust tests, 75 Swift tests; clippy clean; `cargo fmt --check` passes
+- CI coverage jobs enforce ≥90% Rust and ≥85% Swift line coverage
+- `build_prompt` is standalone and directly unit-tested
+- Bench output correctly labels "BM25 inverted-index"
 
 ---
 
