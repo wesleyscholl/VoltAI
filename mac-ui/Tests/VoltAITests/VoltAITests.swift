@@ -452,3 +452,157 @@ final class OllamaStatusTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Helpers
+
+/// Suspends the current task for 150 ms, releasing the main actor so that any
+/// unstructured Tasks spawned inside VoltAIViewModel have time to run to completion.
+/// Works reliably with immediately-returning MockVoltAICaller instances.
+private func waitForTasks() async {
+    try? await Task.sleep(nanoseconds: 150_000_000)
+}
+
+// MARK: - VoltAIViewModel.sendQuery async paths
+
+@MainActor
+final class SendQueryAsyncTests: XCTestCase {
+
+    func test_normalResponse_appendsAssistantMessage() async {
+        let mock = MockVoltAICaller()
+        mock.queryResultToReturn = "Here is your answer."
+        let vm = VoltAIViewModel(caller: mock)
+        vm.input = "what is search?"
+        vm.sendQuery()
+        await waitForTasks()
+
+        XCTAssertEqual(mock.queryCallCount, 1)
+        XCTAssertEqual(vm.messages.last?.role, "assistant")
+        XCTAssertEqual(vm.messages.last?.text, "Here is your answer.")
+        XCTAssertFalse(vm.isLoading)
+        XCTAssertTrue(vm.statusText.isEmpty)
+    }
+
+    func test_missingIndexResponse_appendsCannedMessage_noLastError() async {
+        let mock = MockVoltAICaller()
+        mock.queryResultToReturn = "Error: index file does not exist at path"
+        let vm = VoltAIViewModel(caller: mock)
+        vm.input = "find my notes"
+        vm.sendQuery()
+        await waitForTasks()
+
+        XCTAssertNil(vm.lastError, "missing-index should not set lastError")
+        XCTAssertTrue(
+            vm.messages.last?.text.contains("don't have any indexed documents") == true,
+            "expected canned missing-index message, got: \(vm.messages.last?.text ?? "(nil)")")
+    }
+
+    func test_timeoutResponse_appendsCannedTimeoutMessage() async {
+        let mock = MockVoltAICaller()
+        mock.queryResultToReturn = "[timeout] Process timed out after 60 seconds"
+        let vm = VoltAIViewModel(caller: mock)
+        vm.input = "slow query"
+        vm.sendQuery()
+        await waitForTasks()
+
+        XCTAssertTrue(
+            vm.messages.last?.text.contains("timed out") == true,
+            "expected timeout message, got: \(vm.messages.last?.text ?? "(nil)")")
+    }
+
+    func test_ollamaUnavailableResponse_setsStatusNotRunning() async {
+        let mock = MockVoltAICaller()
+        mock.queryResultToReturn = "connection refused while trying to connect"
+        let vm = VoltAIViewModel(caller: mock)
+        vm.input = "hello"
+        vm.sendQuery()
+        await waitForTasks()
+
+        XCTAssertEqual(vm.ollamaStatus, .notRunning)
+        XCTAssertTrue(
+            vm.messages.last?.text.contains("Ollama is not responding") == true,
+            "expected Ollama-unavailable message, got: \(vm.messages.last?.text ?? "(nil)")")
+    }
+
+    func test_forwardsQueryArgsToCallerCorrectly() async {
+        let mock = MockVoltAICaller()
+        let vm = VoltAIViewModel(caller: mock)
+        vm.selectedModel = "gemma3:4b"
+        vm.input = "distributed systems"
+        vm.sendQuery()
+        await waitForTasks()
+
+        XCTAssertEqual(mock.queryCallCount, 1)
+        XCTAssertEqual(mock.lastQuery?.q, "distributed systems")
+        XCTAssertEqual(mock.lastQuery?.k, 5)
+        XCTAssertEqual(mock.lastQuery?.model, "gemma3:4b")
+    }
+
+}
+
+// MARK: - VoltAIViewModel.init async Ollama check
+
+@MainActor
+final class InitOllamaCheckTests: XCTestCase {
+
+    func test_notInstalledStatus_leavesOllamaStatusNotInstalled() async {
+        let mock = MockVoltAICaller()
+        mock.statusToReturn = .notInstalled
+        let vm = VoltAIViewModel(caller: mock)
+        await waitForTasks()
+
+        XCTAssertEqual(vm.ollamaStatus, .notInstalled)
+        XCTAssertTrue(vm.availableModels.isEmpty)
+        XCTAssertNil(vm.selectedModel)
+        XCTAssertEqual(mock.checkStatusCallCount, 1)
+    }
+
+    func test_readyStatus_populatesModelsAndSelectsPreferred() async {
+        let mock = MockVoltAICaller()
+        mock.statusToReturn = .ready(["gemma3:1b", "random:model"])
+        let vm = VoltAIViewModel(caller: mock)
+        await waitForTasks()
+
+        XCTAssertEqual(vm.ollamaStatus, .ready(["gemma3:1b", "random:model"]))
+        XCTAssertEqual(vm.availableModels, ["gemma3:1b", "random:model"])
+        XCTAssertEqual(vm.selectedModel, "gemma3:1b", "gemma3:1b is higher-ranked than random:model")
+    }
+
+    func test_noModelsStatus_leavesAvailableModelsEmpty() async {
+        let mock = MockVoltAICaller()
+        mock.statusToReturn = .noModels
+        let vm = VoltAIViewModel(caller: mock)
+        await waitForTasks()
+
+        XCTAssertEqual(vm.ollamaStatus, .noModels)
+        XCTAssertTrue(vm.availableModels.isEmpty)
+        XCTAssertNil(vm.selectedModel)
+    }
+}
+
+// MARK: - VoltAIViewModel cancellation path
+
+@MainActor
+final class CancellationTests: XCTestCase {
+
+    func test_cancelIndexing_whileRunning_setsIsIndexingFalseAndCancelledMessage() async throws {
+        let mock = MockVoltAICaller()
+        let vm = VoltAIViewModel(caller: mock)
+
+        // Create a real (but empty) temp directory so the ViewModel adds it to pathsToIndex.
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voltai-test-cancel-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Start indexing, then immediately cancel before the unstructured Task can start.
+        vm.index(paths: [tmpDir])
+        XCTAssertTrue(vm.isIndexing, "isIndexing should be true immediately after index(paths:)")
+        vm.cancelIndexing()
+
+        // Allow the now-cancelled Task to run and drain.
+        await waitForTasks()
+
+        XCTAssertFalse(vm.isIndexing, "isIndexing should be false after cancellation")
+        XCTAssertEqual(vm.progressMessage, "Indexing cancelled")
+    }
+}

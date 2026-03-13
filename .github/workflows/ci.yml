@@ -72,3 +72,26 @@ jobs:
           name: voltai-macos-dmg
           path: voltai-macos.dmg
           retention-days: 30
+
+  coverage:
+    name: Coverage
+    runs-on: macos-latest
+    # Run on every push (not PRs) to track coverage trends over time.
+    if: github.event_name == 'push'
+    needs: [test, lint, swift-test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Rust coverage (tarpaulin)
+        run: cargo tarpaulin --out Xml --output-dir coverage/ --timeout 300
+      - name: Upload Rust coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: coverage/cobertura.xml
+          retention-days: 14
+      - name: Swift coverage
+        run: swift test --package-path mac-ui --enable-code-coverage

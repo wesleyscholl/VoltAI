@@ -39,18 +39,18 @@ Milestones track the major version goals. Check off items as they ship.
 - [x] Binary index format (`--format binary` via bincode, auto-detect on load)
 - [x] Indeterminate progress spinner (removes misleading 0→100% jump)
 - [x] macOS `.dmg` artifact from CI (via `hdiutil`); macOS Swift test job added
-- [ ] Test coverage reporting (tarpaulin + llvm-cov) in CI
+- [x] Test coverage reporting (tarpaulin + llvm-cov) in CI
 
 ---
 
 ## v1.0.0 — Production Quality
 
-- [ ] `VoltAICallerProtocol` + `MockVoltAICaller` for DI
+- [x] `VoltAICallerProtocol` + `MockVoltAICaller` for DI
+- [x] `sendQuery` async path fully tested (5 cases)
+- [x] `index(paths:)` cancellation path tested
+- [x] `init` Ollama check path tested (3 cases)
 - [ ] 90%+ Rust test coverage (tarpaulin)
 - [ ] 85%+ Swift test coverage (llvm-cov)
-- [ ] `sendQuery` async path fully tested
-- [ ] `index(paths:)` async path fully tested
-- [ ] `init` Ollama check path tested
 - [ ] User-configurable `k` (results count) in Settings
 - [ ] Theme picker wired to `NSAppearance`
 - [ ] Document detail panel (tap-to-expand)

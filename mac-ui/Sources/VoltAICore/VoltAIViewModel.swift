@@ -20,14 +20,16 @@ public final class VoltAIViewModel: ObservableObject {
     @Published public var selectedModel: String? = nil
     @Published public var ollamaStatus: OllamaStatus = .notInstalled
 
+    private let caller: any VoltAICallerProtocol
     private var currentTask: Task<Void, Never>? = nil
     public var aborted = false
 
-    public init() {
+    public init(caller: any VoltAICallerProtocol = DefaultVoltAICaller()) {
+        self.caller = caller
         // Inherits @MainActor context — no `await MainActor.run` needed inside.
         Task { [weak self] in
             guard let self else { return }
-            let status = await VoltAICaller.checkOllamaStatus()
+            let status = await self.caller.checkOllamaStatus()
             self.ollamaStatus = status
             if case .ready(let models) = status {
                 self.availableModels = models
@@ -60,7 +62,7 @@ public final class VoltAIViewModel: ObservableObject {
             guard let self else { return }
             self.statusText = "Generating response..."
             let indexPath = FileManager.default.currentDirectoryPath + "/../voltai_index.json"
-            let res = await VoltAICaller.query(
+            let res = await self.caller.query(
                 index: URL(fileURLWithPath: indexPath), q: q, k: 5, model: self.selectedModel)
 
             let lower = res.lowercased()
@@ -170,7 +172,7 @@ public final class VoltAIViewModel: ObservableObject {
                     .deletingLastPathComponent()
                     .appendingPathComponent("voltai_index.json")
 
-                let res = await VoltAICaller.index(dir: p, out: outURL)
+                let res = await self.caller.index(dir: p, out: outURL)
                 let lowerRes = res.lowercased()
 
                 if lowerRes.contains("[timeout]") {
