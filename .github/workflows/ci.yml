@@ -86,7 +86,7 @@ jobs:
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Rust coverage (tarpaulin)
-        run: cargo tarpaulin --out Xml --output-dir coverage/ --timeout 300
+        run: cargo tarpaulin --out Xml --output-dir coverage/ --timeout 300 --fail-under 90
       - name: Upload Rust coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -95,3 +95,30 @@ jobs:
           retention-days: 14
       - name: Swift coverage
         run: swift test --package-path mac-ui --enable-code-coverage
+      - name: Collect Swift coverage report
+        run: |
+          PROF=$(find mac-ui/.build -name "*.profdata" | head -1)
+          BIN=$(find mac-ui/.build -name "VoltAIPackageTests.xctest" | head -1)/Contents/MacOS/VoltAIPackageTests
+          mkdir -p coverage
+          xcrun llvm-cov export "$BIN" --instr-profile="$PROF" --format=lcov \
+            > coverage/swift-coverage.lcov
+          # Enforce 85% line coverage threshold
+          xcrun llvm-cov report "$BIN" --instr-profile="$PROF" \
+            | tee /tmp/swift-cov-report.txt
+          python3 - <<'EOF'
+          import sys, re
+          text = open("/tmp/swift-cov-report.txt").read()
+          total = [l for l in text.splitlines() if l.startswith("TOTAL")]
+          if not total:
+              print("Could not parse coverage report"); sys.exit(1)
+          m = re.search(r'(\d+\.\d+)%', total[-1])
+          cov = float(m.group(1)) if m else 0.0
+          print(f"Swift line coverage: {cov:.1f}%")
+          sys.exit(0 if cov >= 85.0 else 1)
+          EOF
+      - name: Upload Swift coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-coverage
+          path: coverage/swift-coverage.lcov
+          retention-days: 14

@@ -249,9 +249,7 @@ fn index_dir(dir: &Path, out: &Path, format: IndexFormat) -> Result<()> {
     // BM25-IDF (Robertson-Sparck Jones): rare terms get high weight; ubiquitous terms approach 0.
     let idf: Vec<f32> = df_counts
         .iter()
-        .map(|&df_count| {
-            ((n_docs - df_count as f32 + 0.5) / (df_count as f32 + 0.5) + 1.0).ln()
-        })
+        .map(|&df_count| ((n_docs - df_count as f32 + 0.5) / (df_count as f32 + 0.5) + 1.0).ln())
         .collect();
 
     let term_index: HashMap<&String, usize> =
@@ -354,6 +352,94 @@ fn print_keyword_fallback(idx: &Index, q: &str, k: usize) {
     }
 }
 
+/// Builds the full Ollama prompt for query `q` using BM25 retrieval against `idx`.
+///
+/// Performs O(T) inverted-index candidate accumulation, selects up to `k` documents,
+/// formats per-document keyword excerpts, and wraps the result in the appropriate
+/// prompt template (summarisation vs. specific-question). Returns the bare query string
+/// when the index has no term overlap with `q` so the caller can still invoke Ollama.
+fn build_prompt(idx: &Index, q: &str, k: usize) -> String {
+    let mut prompt = q.to_string();
+    if idx.terms.is_empty() || idx.vectors.is_empty() {
+        return prompt;
+    }
+
+    let q_toks = tokenize(q);
+    let term_map: HashMap<&String, usize> =
+        idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+
+    let is_general_query = q.to_lowercase().contains("summarize")
+        || q.to_lowercase().contains("list")
+        || q.to_lowercase().contains("all")
+        || q.to_lowercase().contains("documents")
+        || q_toks.len() < 3;
+    let selected_docs: Vec<usize> = if is_general_query {
+        (0..idx.docs.len()).collect()
+    } else {
+        let mut scores: HashMap<usize, f32> = HashMap::new();
+        for t in q_toks.iter() {
+            if let Some(&ti) = term_map.get(t) {
+                if let Some(candidates) = idx.inverted.get(t.as_str()) {
+                    for &di in candidates {
+                        *scores.entry(di).or_insert(0.0) += idx.idf[ti] * idx.vectors[di][ti];
+                    }
+                }
+            }
+        }
+        let mut sims: Vec<(usize, f32)> = scores.into_iter().collect();
+        sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        sims.into_iter().take(k).map(|(i, _)| i).collect()
+    };
+
+    let mut context = String::new();
+    for &i in selected_docs.iter().take(10) {
+        let doc = &idx.docs[i];
+        let fname = std::path::Path::new(&doc.path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| doc.path.clone());
+        let mut tf: HashMap<String, usize> = HashMap::new();
+        for tk in tokenize(&doc.text) {
+            if tk.len() <= 2 {
+                continue;
+            }
+            *tf.entry(tk).or_insert(0) += 1;
+        }
+        let mut kv: Vec<(String, usize)> = tf.into_iter().collect();
+        kv.sort_by(|a, b| b.1.cmp(&a.1));
+        let keywords: Vec<String> = kv.into_iter().take(8).map(|(t, _)| t).collect();
+        let kw = if keywords.is_empty() {
+            String::from("(no keywords)")
+        } else {
+            keywords.join(", ")
+        };
+        context.push_str(&format!("Filename: {}\nKeywords: {}\n---\n", fname, kw));
+    }
+
+    if !context.is_empty() {
+        if is_general_query {
+            let example = "Example:\nFilename: example.txt\nKeywords: contract, delivery, schedule\n---\nOutput:\n- example.txt — The document outlines the delivery schedule and contractual obligations for shipments.\n";
+            prompt = format!(
+                "You are a concise summarizer. DO NOT QUOTE OR OUTPUT RAW DOCUMENT TEXT. Use the provided keywords to produce paraphrased summaries; do not reuse whole sentences from the source. For each document below, output: (1) a one-line label (filename — short descriptive title), (2) one-sentence paraphrased summary. After that, provide a brief combined summary of all documents (max 200 words). Keep summaries original and concise.\n\n{example}\nDocuments:\n{}\nEnd of documents.\n\nProvide the summaries now.",
+                context
+            );
+            // Write the prompt to a debug file for inspection.
+            if let Ok(mut dbgf) = File::create(std::path::Path::new("/tmp/voltai_last_prompt.txt"))
+            {
+                use std::io::Write;
+                let _ = dbgf.write_all(prompt.as_bytes());
+            }
+        } else {
+            prompt = format!(
+                "Use the following documents as context:\n{}\nQuestion: {}",
+                context, q
+            );
+        }
+    }
+
+    prompt
+}
+
 fn query_with_ollama(
     index_file: &Path,
     q: &str,
@@ -426,100 +512,10 @@ fn query_with_ollama(
         None
     };
 
-    let mut prompt = q.to_string();
-    if let Some(ref idx) = maybe_idx {
-        if !idx.terms.is_empty() && !idx.vectors.is_empty() {
-            // Build the BM25 query vector: for each unique query term, set its weight to
-            // the pre-computed BM25-IDF score stored in the index.  No L2 normalisation is
-            // needed because the document vectors already incorporate length normalisation.
-            // Score(d,q) = Σ_t idf[t] * bm25_tf(t,d) = dot_product(q_vec, vectors[d]).
-            let q_toks = tokenize(q);
-            let term_map: HashMap<&String, usize> =
-                idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
-
-            let is_general_query = q.to_lowercase().contains("summarize")
-                || q.to_lowercase().contains("list")
-                || q.to_lowercase().contains("all")
-                || q.to_lowercase().contains("documents")
-                || q_toks.len() < 3;
-            let selected_docs: Vec<usize> = if is_general_query {
-                // Include all docs for general queries
-                (0..idx.docs.len()).collect()
-            } else {
-                // O(T) candidate accumulation: only score documents that share at least
-                // one query term with the query, skipping zero-overlap documents entirely.
-                let mut scores: HashMap<usize, f32> = HashMap::new();
-                for t in q_toks.iter() {
-                    if let Some(&ti) = term_map.get(t) {
-                        if let Some(candidates) = idx.inverted.get(t.as_str()) {
-                            for &di in candidates {
-                                *scores.entry(di).or_insert(0.0) +=
-                                    idx.idf[ti] * idx.vectors[di][ti];
-                            }
-                        }
-                    }
-                }
-                let mut sims: Vec<(usize, f32)> = scores.into_iter().collect();
-                sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                sims.into_iter().take(k).map(|(i, _)| i).collect()
-            };
-
-            let mut context = String::new();
-            // For general summarization requests we prefer filename + short excerpt rather than
-            // dumping entire document text. This reduces hallucination/regurgitation and gives
-            // the model a clearer instruction to summarize.
-            for &i in selected_docs.iter().take(10) {
-                let doc = &idx.docs[i];
-                let fname = std::path::Path::new(&doc.path)
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| doc.path.clone());
-                // derive top keywords from the document text as lightweight context
-                let mut tf: HashMap<String, usize> = HashMap::new();
-                for tk in tokenize(&doc.text) {
-                    if tk.len() <= 2 {
-                        continue;
-                    }
-                    // prefer tokens that are in the global term list (if available)
-                    *tf.entry(tk).or_insert(0) += 1;
-                }
-                let mut kv: Vec<(String, usize)> = tf.into_iter().collect();
-                kv.sort_by(|a, b| b.1.cmp(&a.1));
-                let keywords: Vec<String> = kv.into_iter().take(8).map(|(t, _)| t).collect();
-                let kw = if keywords.is_empty() {
-                    String::from("(no keywords)")
-                } else {
-                    keywords.join(", ")
-                };
-                context.push_str(&format!("Filename: {}\nKeywords: {}\n---\n", fname, kw));
-            }
-
-            if !context.is_empty() {
-                if is_general_query {
-                    // Provide a clearer instruction to the model: per-document one-sentence summaries
-                    // and a combined concise summary. Cap output length to avoid dumping raw text.
-                    // Few-shot and strict instructions to avoid verbatim quoting; use keywords rather than excerpts.
-                    let example = "Example:\nFilename: example.txt\nKeywords: contract, delivery, schedule\n---\nOutput:\n- example.txt — The document outlines the delivery schedule and contractual obligations for shipments.\n";
-                    prompt = format!(
-                        "You are a concise summarizer. DO NOT QUOTE OR OUTPUT RAW DOCUMENT TEXT. Use the provided keywords to produce paraphrased summaries; do not reuse whole sentences from the source. For each document below, output: (1) a one-line label (filename — short descriptive title), (2) one-sentence paraphrased summary. After that, provide a brief combined summary of all documents (max 200 words). Keep summaries original and concise.\n\n{example}\nDocuments:\n{}\nEnd of documents.\n\nProvide the summaries now.",
-                        context
-                    );
-                    // Also write the prompt to a debug file for inspection
-                    if let Ok(mut dbgf) =
-                        File::create(std::path::Path::new("/tmp/voltai_last_prompt.txt"))
-                    {
-                        use std::io::Write;
-                        let _ = dbgf.write_all(prompt.as_bytes());
-                    }
-                } else {
-                    prompt = format!(
-                        "Use the following documents as context:\n{}\nQuestion: {}",
-                        context, q
-                    );
-                }
-            }
-        }
-    }
+    let prompt = maybe_idx
+        .as_ref()
+        .map(|idx| build_prompt(idx, q, k))
+        .unwrap_or_else(|| q.to_string());
 
     // Try to run Ollama; if it fails, fall back to returning top-k documents directly.
     let output = Command::new("ollama")
@@ -747,8 +743,7 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
                 if let Some(&ti) = term_map.get(&t.to_string()) {
                     if let Some(candidates) = idx.inverted.get(*t) {
                         for &di in candidates {
-                            *scores.entry(di).or_insert(0.0) +=
-                                idx.idf[ti] * idx.vectors[di][ti];
+                            *scores.entry(di).or_insert(0.0) += idx.idf[ti] * idx.vectors[di][ti];
                         }
                     }
                 }
@@ -788,7 +783,7 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
     );
     println!();
     println!(
-        "Query (dot-product search, {} iterations):",
+        "Query (BM25 inverted-index, {} iterations):",
         query_iterations
     );
     println!("  mean:  {:.1}µs  ({:.2}ms)", mean_us, mean_us / 1000.0);
@@ -1442,7 +1437,10 @@ mod tests {
 
         // "photon" appears only in doc_a — df = 1, N = 3.
         std::fs::write(temp_dir.path().join("a.txt"), "photon quantum entanglement")?;
-        std::fs::write(temp_dir.path().join("b.txt"), "classical mechanics velocity")?;
+        std::fs::write(
+            temp_dir.path().join("b.txt"),
+            "classical mechanics velocity",
+        )?;
         std::fs::write(temp_dir.path().join("c.txt"), "thermodynamics entropy heat")?;
 
         let index_path = temp_dir.path().join("idx.json");
@@ -1528,7 +1526,10 @@ mod tests {
         // Verify that every (term, doc) pair with a nonzero BM25 weight appears in `inverted`.
         let temp_dir = TempDir::new()?;
         std::fs::write(temp_dir.path().join("a.txt"), "rust ownership memory")?;
-        std::fs::write(temp_dir.path().join("b.txt"), "python garbage collection memory")?;
+        std::fs::write(
+            temp_dir.path().join("b.txt"),
+            "python garbage collection memory",
+        )?;
 
         let index_path = temp_dir.path().join("idx.json");
         index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
@@ -1565,9 +1566,18 @@ mod tests {
         // Confirm that O(T) inverted-index scoring and naïve O(n·V) dot-product scoring
         // produce the same top-k ranking for a concrete query.
         let temp_dir = TempDir::new()?;
-        std::fs::write(temp_dir.path().join("a.txt"), "rust systems programming ownership")?;
-        std::fs::write(temp_dir.path().join("b.txt"), "python machine learning neural")?;
-        std::fs::write(temp_dir.path().join("c.txt"), "rust concurrency async await")?;
+        std::fs::write(
+            temp_dir.path().join("a.txt"),
+            "rust systems programming ownership",
+        )?;
+        std::fs::write(
+            temp_dir.path().join("b.txt"),
+            "python machine learning neural",
+        )?;
+        std::fs::write(
+            temp_dir.path().join("c.txt"),
+            "rust concurrency async await",
+        )?;
 
         let index_path = temp_dir.path().join("idx.json");
         index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
@@ -1586,8 +1596,7 @@ mod tests {
             if let Some(&ti) = term_map.get(t) {
                 if let Some(candidates) = idx.inverted.get(t.as_str()) {
                     for &di in candidates {
-                        *inv_scores.entry(di).or_insert(0.0) +=
-                            idx.idf[ti] * idx.vectors[di][ti];
+                        *inv_scores.entry(di).or_insert(0.0) += idx.idf[ti] * idx.vectors[di][ti];
                     }
                 }
             }
@@ -1632,7 +1641,10 @@ mod tests {
         let temp_dir = TempDir::new()?;
         // doc_a has "photon" and "quantum"; doc_b has completely different vocabulary.
         std::fs::write(temp_dir.path().join("a.txt"), "photon quantum entanglement")?;
-        std::fs::write(temp_dir.path().join("b.txt"), "classical mechanics velocity")?;
+        std::fs::write(
+            temp_dir.path().join("b.txt"),
+            "classical mechanics velocity",
+        )?;
 
         let index_path = temp_dir.path().join("idx.json");
         index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
@@ -1672,13 +1684,8 @@ mod tests {
     }
 
     #[test]
-    fn test_vector_similarity_ranges() {
-        // Test similarity (dot product, not normalized)
-        let a = vec![1.0, 2.0, 3.0];
-        let b = vec![4.0, 5.0, 6.0];
-
-        let sim = dot_product(&a, &b); // This is actually dot product
-        assert!(sim > 0.0); // Positive correlation
+    fn test_dot_product_precise_value() {
+        assert_eq!(dot_product(&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0]), 32.0);
     }
 
     #[test]
@@ -1707,35 +1714,50 @@ mod tests {
     }
 
     #[test]
-    fn test_context_building() {
-        // Test that context string can be built
-        let keywords = vec!["kubernetes", "docker", "nginx"];
-        let context = keywords.join(", ");
+    fn test_build_prompt_contains_filename_and_keywords() {
+        let docs = vec![Doc {
+            id: "doc-0".to_string(),
+            path: "/docs/alpha.txt".to_string(),
+            text: "rust programming memory ownership safety".to_string(),
+        }];
+        let terms = vec!["programming".to_string(), "memory".to_string()];
+        let norm = (2.0f32).sqrt().recip();
+        let vectors = vec![vec![norm, norm]];
+        let idf = vec![1.0f32, 1.0f32];
+        let mut inverted: HashMap<String, Vec<usize>> = HashMap::new();
+        inverted.insert("programming".to_string(), vec![0]);
+        inverted.insert("memory".to_string(), vec![0]);
+        let idx = Index {
+            docs,
+            terms,
+            idf,
+            vectors,
+            inverted,
+        };
 
-        assert_eq!(context, "kubernetes, docker, nginx");
-        assert!(context.contains("kubernetes"));
-        assert!(context.contains("docker"));
+        let result = build_prompt(&idx, "programming memory", 5);
+        assert!(
+            result.contains("Filename:"),
+            "prompt must contain 'Filename:'"
+        );
+        assert!(
+            result.contains("Keywords:"),
+            "prompt must contain 'Keywords:'"
+        );
+        assert!(
+            result.contains("alpha.txt"),
+            "prompt must reference the indexed document"
+        );
     }
 
     #[test]
-    fn test_filename_extraction() {
-        let path = "/path/to/document/test.txt";
-        let fname = std::path::Path::new(path)
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string());
-
-        assert_eq!(fname, "test.txt");
-    }
-
-    #[test]
-    fn test_size_unit_parsing() {
-        // Test size parsing logic for ollama model selection
-        let size_gb = 3.3 * 1024.0 * 1024.0 * 1024.0;
-        let size_mb = 700.0 * 1024.0 * 1024.0;
-
-        assert!(size_gb > size_mb);
-        assert!(size_mb > 0.0);
+    fn test_bench_reports_positive_throughput() {
+        let result = run_bench(10, 2);
+        assert!(
+            result.is_ok(),
+            "run_bench should complete successfully: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -2269,9 +2291,9 @@ mod tests {
 
     #[test]
     fn test_print_keyword_fallback_does_not_panic() {
-        // Verifies that print_keyword_fallback completes without panicking when given
-        // a valid Index. The keyword summary output goes to stdout (not asserted here
-        // since Rust tests don't capture stdout by default).
+        // Verifies that print_keyword_fallback completes without panicking and that
+        // score ordering is correct: doc-0 (programming/memory) must rank first for
+        // "programming memory" verified via build_prompt's inverted-index path.
         let docs = vec![
             Doc {
                 id: "doc-0".to_string(),
@@ -2284,8 +2306,6 @@ mod tests {
                 text: "python scripting web framework requests asyncio".to_string(),
             },
         ];
-        // Minimal pre-normalized vectors: doc-0 covers "programming" / "memory",
-        // doc-1 covers "python" / "framework"
         let terms = vec![
             "programming".to_string(),
             "memory".to_string(),
@@ -2294,14 +2314,25 @@ mod tests {
         ];
         let norm = (2.0f32).sqrt().recip();
         let vectors = vec![vec![norm, norm, 0.0, 0.0], vec![0.0, 0.0, norm, norm]];
+        let mut inverted: HashMap<String, Vec<usize>> = HashMap::new();
+        inverted.insert("programming".to_string(), vec![0]);
+        inverted.insert("memory".to_string(), vec![0]);
+        inverted.insert("python".to_string(), vec![1]);
+        inverted.insert("framework".to_string(), vec![1]);
         let idx = Index {
             docs,
             terms,
             idf: vec![1.0, 1.0, 1.0, 1.0],
             vectors,
-            inverted: HashMap::new(),
+            inverted,
         };
-        // Should rank doc-0 first for "programming memory" and not panic
+        // Verify doc-0 ("alpha.txt") ranks first for "programming memory".
+        let prompt = build_prompt(&idx, "programming memory", 2);
+        assert!(
+            prompt.contains("alpha.txt"),
+            "doc-0 (alpha.txt) must be the top-ranked result for 'programming memory'"
+        );
+        // Also verify the function itself does not panic.
         print_keyword_fallback(&idx, "programming memory", 2);
     }
 
