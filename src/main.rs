@@ -117,6 +117,9 @@ struct Index {
     /// Pre-normalised BM25 term weights (IDF excluded): `(tf*(k1+1))/(tf+k1*(1-b+b*|d|/avgdl))`.
     /// Score = dot_product(q_vec, vectors[doc]) where q_vec[t] = idf[t] for query terms.
     vectors: Vec<Vec<f32>>,
+    /// Inverted index: term → doc indices where that term has a nonzero BM25 weight.
+    /// Enables O(T) candidate accumulation at query time instead of O(n·V) linear scan.
+    inverted: HashMap<String, Vec<usize>>,
 }
 
 fn read_text_file(p: &Path) -> Result<String> {
@@ -144,8 +147,9 @@ fn tokenize(s: &str) -> Vec<String> {
 }
 
 /// Computes the inner product of two vectors.
-/// With BM25, documents store pre-normalised term weights and the query vector stores IDF values,
-/// so the dot product yields the BM25 score directly without L2 normalisation.
+/// Used in tests as a reference implementation for BM25 score verification.
+/// Production query scoring uses the inverted-index O(T) path instead.
+#[cfg(test)]
 fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
@@ -276,11 +280,26 @@ fn index_dir(dir: &Path, out: &Path, format: IndexFormat) -> Result<()> {
         })
         .collect();
 
+    // Build inverted index: term → doc indices with a nonzero BM25 weight.
+    // Enables O(T) query-time candidate accumulation that skips zero-overlap documents.
+    let mut inverted: HashMap<String, Vec<usize>> = HashMap::new();
+    for (doc_idx, vec) in vectors.iter().enumerate() {
+        for (term_idx, &w) in vec.iter().enumerate() {
+            if w > 0.0 {
+                inverted
+                    .entry(terms[term_idx].clone())
+                    .or_default()
+                    .push(doc_idx);
+            }
+        }
+    }
+
     let index = Index {
         docs,
         terms,
         idf,
         vectors,
+        inverted,
     };
 
     let fout = File::create(out)?;
@@ -297,20 +316,20 @@ fn index_dir(dir: &Path, out: &Path, format: IndexFormat) -> Result<()> {
 fn print_keyword_fallback(idx: &Index, q: &str, k: usize) {
     let term_map: HashMap<&String, usize> =
         idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
-    // BM25 query vector: weight each query term by its pre-computed IDF.
-    // Score = dot_product(q_vec, vectors[doc]) — no L2 normalisation needed.
-    let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
+    // O(T) BM25 scoring: accumulate scores only for documents that share a query term.
+    // For each query token, look up candidate docs from the inverted index and add
+    // idf[t] * bm25_tf(t, doc) to their score.  No L2 normalisation needed.
+    let mut scores: HashMap<usize, f32> = HashMap::new();
     for t in tokenize(q).iter() {
-        if let Some(&i) = term_map.get(t) {
-            q_vec[i] = idx.idf[i];
+        if let Some(&ti) = term_map.get(t) {
+            if let Some(candidates) = idx.inverted.get(t.as_str()) {
+                for &di in candidates {
+                    *scores.entry(di).or_insert(0.0) += idx.idf[ti] * idx.vectors[di][ti];
+                }
+            }
         }
     }
-    let mut sims: Vec<(usize, f32)> = idx
-        .vectors
-        .iter()
-        .enumerate()
-        .map(|(i, v)| (i, dot_product(&q_vec, v)))
-        .collect();
+    let mut sims: Vec<(usize, f32)> = scores.into_iter().collect();
     sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     for (i, _) in sims.into_iter().take(k) {
         let doc = &idx.docs[i];
@@ -415,14 +434,8 @@ fn query_with_ollama(
             // needed because the document vectors already incorporate length normalisation.
             // Score(d,q) = Σ_t idf[t] * bm25_tf(t,d) = dot_product(q_vec, vectors[d]).
             let q_toks = tokenize(q);
-            let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
             let term_map: HashMap<&String, usize> =
                 idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
-            for t in q_toks.iter() {
-                if let Some(&i) = term_map.get(t) {
-                    q_vec[i] = idx.idf[i];
-                }
-            }
 
             let is_general_query = q.to_lowercase().contains("summarize")
                 || q.to_lowercase().contains("list")
@@ -433,14 +446,20 @@ fn query_with_ollama(
                 // Include all docs for general queries
                 (0..idx.docs.len()).collect()
             } else {
-                // Use top-k similar docs
-                let mut sims: Vec<(usize, f32)> = idx
-                    .vectors
-                    .iter()
-                    .enumerate()
-                    .map(|(i, v)| (i, dot_product(&q_vec, v)))
-                    .collect();
-
+                // O(T) candidate accumulation: only score documents that share at least
+                // one query term with the query, skipping zero-overlap documents entirely.
+                let mut scores: HashMap<usize, f32> = HashMap::new();
+                for t in q_toks.iter() {
+                    if let Some(&ti) = term_map.get(t) {
+                        if let Some(candidates) = idx.inverted.get(t.as_str()) {
+                            for &di in candidates {
+                                *scores.entry(di).or_insert(0.0) +=
+                                    idx.idf[ti] * idx.vectors[di][ti];
+                            }
+                        }
+                    }
+                }
+                let mut sims: Vec<(usize, f32)> = scores.into_iter().collect();
                 sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 sims.into_iter().take(k).map(|(i, _)| i).collect()
             };
@@ -717,24 +736,28 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
     let term_map: HashMap<&String, usize> =
         idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
 
-    let mut q_vec = vec![0.0f32; idx.terms.len()];
-    for t in &query_terms {
-        if let Some(&i) = term_map.get(&t.to_string()) {
-            q_vec[i] = idx.idf[i];
-        }
-    }
-
     println!("Running {} query iterations...", query_iterations);
     let mut query_times_us: Vec<u128> = Vec::with_capacity(query_iterations);
     for _ in 0..query_iterations {
         let qt = Instant::now();
-        let _best: Option<usize> = idx
-            .vectors
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (i, dot_product(&q_vec, v)))
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i);
+        // O(T) candidate accumulation via inverted index.
+        let _best: Option<usize> = {
+            let mut scores: HashMap<usize, f32> = HashMap::new();
+            for t in &query_terms {
+                if let Some(&ti) = term_map.get(&t.to_string()) {
+                    if let Some(candidates) = idx.inverted.get(*t) {
+                        for &di in candidates {
+                            *scores.entry(di).or_insert(0.0) +=
+                                idx.idf[ti] * idx.vectors[di][ti];
+                        }
+                    }
+                }
+            }
+            scores
+                .into_iter()
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| i)
+        };
         query_times_us.push(qt.elapsed().as_micros());
     }
 
@@ -969,6 +992,7 @@ mod tests {
             terms: vec!["content".to_string(), "test".to_string()],
             idf: vec![1.0, 1.0],
             vectors: vec![vec![0.5, 0.5]],
+            inverted: HashMap::new(),
         };
 
         let json = serde_json::to_string(&index).unwrap();
@@ -1101,6 +1125,7 @@ mod tests {
                 text: "test document content".to_string(),
             }],
             vectors: vec![vec![0.7071, 0.7071]],
+            inverted: HashMap::new(),
         };
 
         let f = File::create(&index_path)?;
@@ -1499,6 +1524,154 @@ mod tests {
     }
 
     #[test]
+    fn test_inverted_index_contains_all_nonzero_term_doc_pairs() -> Result<()> {
+        // Verify that every (term, doc) pair with a nonzero BM25 weight appears in `inverted`.
+        let temp_dir = TempDir::new()?;
+        std::fs::write(temp_dir.path().join("a.txt"), "rust ownership memory")?;
+        std::fs::write(temp_dir.path().join("b.txt"), "python garbage collection memory")?;
+
+        let index_path = temp_dir.path().join("idx.json");
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
+
+        let f = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(f)?;
+
+        // For every (doc, term) pair where the BM25 weight is positive, the inverted index
+        // must list that doc as a candidate for the term.
+        for (doc_idx, vec) in idx.vectors.iter().enumerate() {
+            for (term_idx, &w) in vec.iter().enumerate() {
+                if w > 0.0 {
+                    let term = &idx.terms[term_idx];
+                    let candidates = idx
+                        .inverted
+                        .get(term)
+                        .unwrap_or_else(|| panic!("term '{}' missing from inverted index", term));
+                    assert!(
+                        candidates.contains(&doc_idx),
+                        "doc {} (weight={:.4}) missing from inverted[{}]",
+                        doc_idx,
+                        w,
+                        term
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_inverted_query_returns_same_results_as_linear_scan() -> Result<()> {
+        // Confirm that O(T) inverted-index scoring and naïve O(n·V) dot-product scoring
+        // produce the same top-k ranking for a concrete query.
+        let temp_dir = TempDir::new()?;
+        std::fs::write(temp_dir.path().join("a.txt"), "rust systems programming ownership")?;
+        std::fs::write(temp_dir.path().join("b.txt"), "python machine learning neural")?;
+        std::fs::write(temp_dir.path().join("c.txt"), "rust concurrency async await")?;
+
+        let index_path = temp_dir.path().join("idx.json");
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
+
+        let f = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(f)?;
+
+        let query = "rust programming";
+        let q_toks = tokenize(query);
+        let term_map: HashMap<&String, usize> =
+            idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+
+        // --- O(T) inverted path ---
+        let mut inv_scores: HashMap<usize, f32> = HashMap::new();
+        for t in q_toks.iter() {
+            if let Some(&ti) = term_map.get(t) {
+                if let Some(candidates) = idx.inverted.get(t.as_str()) {
+                    for &di in candidates {
+                        *inv_scores.entry(di).or_insert(0.0) +=
+                            idx.idf[ti] * idx.vectors[di][ti];
+                    }
+                }
+            }
+        }
+        let mut inv_sims: Vec<(usize, f32)> = inv_scores.into_iter().collect();
+        inv_sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let inv_top: Vec<usize> = inv_sims.iter().take(3).map(|(i, _)| *i).collect();
+
+        // --- Naïve O(n·V) path (reference) ---
+        let mut q_vec = vec![0.0_f32; idx.terms.len()];
+        for t in q_toks.iter() {
+            if let Some(&i) = term_map.get(t) {
+                q_vec[i] = idx.idf[i];
+            }
+        }
+        let mut lin_sims: Vec<(usize, f32)> = idx
+            .vectors
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (i, dot_product(&q_vec, v)))
+            .collect();
+        lin_sims.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Filter to only docs with positive score to match inverted behaviour.
+        let lin_top: Vec<usize> = lin_sims
+            .iter()
+            .filter(|(_, s)| *s > 0.0)
+            .take(3)
+            .map(|(i, _)| *i)
+            .collect();
+
+        assert_eq!(
+            inv_top, lin_top,
+            "inverted and linear-scan rankings must agree for top-k"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_inverted_skips_zero_overlap_docs() -> Result<()> {
+        // Documents with no query-term overlap must never appear in the candidate set.
+        let temp_dir = TempDir::new()?;
+        // doc_a has "photon" and "quantum"; doc_b has completely different vocabulary.
+        std::fs::write(temp_dir.path().join("a.txt"), "photon quantum entanglement")?;
+        std::fs::write(temp_dir.path().join("b.txt"), "classical mechanics velocity")?;
+
+        let index_path = temp_dir.path().join("idx.json");
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
+
+        let f = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(f)?;
+
+        let term_map: HashMap<&String, usize> =
+            idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+
+        // Identify doc_b's index so we can assert it never appears as a candidate.
+        let doc_b_idx = idx
+            .docs
+            .iter()
+            .position(|d| d.path.contains("b.txt"))
+            .expect("b.txt not found in index");
+
+        // Query for "photon quantum" — terms only in doc_a.
+        let mut candidate_set: std::collections::HashSet<usize> = std::collections::HashSet::new();
+        for t in tokenize("photon quantum").iter() {
+            if let Some(&ti) = term_map.get(t) {
+                if let Some(candidates) = idx.inverted.get(t.as_str()) {
+                    for &di in candidates {
+                        let _ = ti; // suppress unused-variable warning
+                        candidate_set.insert(di);
+                    }
+                }
+            }
+        }
+
+        assert!(
+            !candidate_set.contains(&doc_b_idx),
+            "doc_b must never appear in the candidate set for a query it has no overlap with"
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_vector_similarity_ranges() {
         // Test similarity (dot product, not normalized)
         let a = vec![1.0, 2.0, 3.0];
@@ -1698,6 +1871,7 @@ mod tests {
                 text: "kubernetes and docker".to_string(),
             }],
             vectors: vec![vec![0.7071, 0.7071, 0.0]],
+            inverted: HashMap::new(),
         };
 
         let f = File::create(&index_path)?;
@@ -1852,6 +2026,7 @@ mod tests {
             idf: vec![],
             docs: vec![],
             vectors: vec![],
+            inverted: HashMap::new(),
         };
 
         let f = File::create(&index_path)?;
@@ -2124,6 +2299,7 @@ mod tests {
             terms,
             idf: vec![1.0, 1.0, 1.0, 1.0],
             vectors,
+            inverted: HashMap::new(),
         };
         // Should rank doc-0 first for "programming memory" and not panic
         print_keyword_fallback(&idx, "programming memory", 2);
@@ -2136,6 +2312,7 @@ mod tests {
             terms: vec![],
             idf: vec![],
             vectors: vec![],
+            inverted: HashMap::new(),
         };
         print_keyword_fallback(&idx, "any query", 5);
     }
