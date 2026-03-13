@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import VoltAICore
 
 struct ContentView: View {
     @StateObject var vm = VoltAIViewModel()
