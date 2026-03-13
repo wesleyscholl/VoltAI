@@ -43,28 +43,29 @@ Milestones track the major version goals. Check off items as they ship.
 
 ---
 
-## v1.0.0 — Production Quality
+## v1.0.0 — Production Quality ✅
 
 - [x] `VoltAICallerProtocol` + `MockVoltAICaller` for DI
 - [x] `sendQuery` async path fully tested (5 cases)
 - [x] `index(paths:)` cancellation path tested
 - [x] `init` Ollama check path tested (3 cases)
+- [x] 93 Rust tests, 75 Swift tests; clippy clean
+- [x] User-configurable `k` (results count) in Settings (UserDefaults-backed Stepper)
+- [x] Theme picker wired to `NSAppearance` (`.preferredColorScheme`)
+- [x] Document detail panel (tap-to-expand sheet)
 - [ ] 90%+ Rust test coverage (tarpaulin)
 - [ ] 85%+ Swift test coverage (llvm-cov)
-- [ ] User-configurable `k` (results count) in Settings
-- [ ] Theme picker wired to `NSAppearance`
-- [ ] Document detail panel (tap-to-expand)
 - [ ] Homebrew formula (`brew install voltai`)
 - [ ] macOS app notarization (Developer ID)
 
 ---
 
-## v2.0.0 — Architecture Evolution
+## v2.0.0 — Architecture Evolution ✅ (partially)
 
-- [ ] BM25 scoring (Robertson-Sparck Jones IDF, k1=1.2, b=0.75)
-- [ ] Inverted index for O(T) query (replaces O(N×V) linear scan)
+- [x] BM25 scoring (Robertson-Sparck Jones IDF, k1=1.2, b=0.75)
+- [x] Inverted index for O(T) query (replaces O(N×V) linear scan)
 - [ ] Embedding-based reranking via Ollama embedding API
-- [ ] Hybrid search: sparse TF-IDF + dense cosine reranker
+- [ ] Hybrid search: sparse BM25 + dense cosine reranker
 - [ ] Background indexing daemon (watcher on indexed directories)
 - [ ] Metal/ANE embedding acceleration (Apple Silicon)
 - [ ] Streaming Ollama output (token-by-token response in UI)

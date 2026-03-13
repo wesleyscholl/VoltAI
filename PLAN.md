@@ -5,8 +5,8 @@
 
 ## Current State
 
-Version `0.9.0`. Working Rust TF-IDF CLI + macOS SwiftUI app. 88 Rust tests, 70 Swift tests.
-CI: Linux Rust test/lint + macOS Swift test + macOS DMG packaging + coverage reporting. Phases 1–3 complete.
+Version `1.0.0`. Working BM25 Rust CLI + macOS SwiftUI app. 93 Rust tests, 75 Swift tests.
+CI: Linux Rust test/lint + macOS Swift test + macOS DMG packaging + coverage reporting. Phases 1–4 complete.
 
 ---
 
@@ -73,21 +73,22 @@ CI: Linux Rust test/lint + macOS Swift test + macOS DMG packaging + coverage rep
 
 ## Phase 4 — UX Features & Architecture Evolution
 
-**Status:** ⬜ Pending
+**Status:** ✅ Complete (`v1.0.0`)
 
 | # | Task | File(s) | Status |
 |---|---|---|---|
-| 4.1 | Swift: User-configurable `k` via `@AppStorage` + Settings stepper | `VoltAIViewModel.swift`, `ContentView.swift` | ⬜ |
-| 4.2 | Swift: Theme picker wired to `.preferredColorScheme` | `VoltAIViewModel.swift`, `ContentView.swift` | ⬜ |
-| 4.3 | Swift: Background indexing toggle backed by `@AppStorage` | `VoltAIViewModel.swift`, `ContentView.swift` | ⬜ |
-| 4.4 | Swift: Document detail panel (`selectedDoc` + `.sheet`) | `VoltAIViewModel.swift`, `ContentView.swift` | ⬜ |
-| 4.5 | Rust: BM25 scoring (Robertson-Sparck Jones IDF, k1=1.2, b=0.75) | `src/main.rs` | ⬜ |
-| 4.6 | Rust: Inverted index for O(T) query | `src/main.rs` | ⬜ |
+| 4.1 | Swift: User-configurable `k` via UserDefaults + Settings stepper | `VoltAIViewModel.swift`, `ContentView.swift` | ✅ Done |
+| 4.2 | Swift: Theme picker wired to `.preferredColorScheme` | `ContentView.swift` | ✅ Done |
+| 4.3 | Swift: Background indexing toggle backed by `@AppStorage` | `ContentView.swift` | ✅ Done |
+| 4.4 | Swift: Document detail panel (`selectedDoc` + `.sheet`) | `VoltAIViewModel.swift`, `ContentView.swift` | ✅ Done |
+| 4.5 | Rust: BM25 scoring (Robertson-Sparck Jones IDF, k1=1.2, b=0.75) | `src/main.rs` | ✅ Done |
+| 4.6 | Rust: Inverted index for O(T) query | `src/main.rs` | ✅ Done |
 
-**Acceptance criteria:**
-- Settings persist across restarts
-- BM25 bench results measurably faster than TF-IDF baseline
-- ROADMAP `v2.0.0` items checked off
+**Acceptance criteria:** ✅ All met
+- Settings persist across restarts (UserDefaults / @AppStorage)
+- BM25 replaces TF-IDF; O(T) inverted-index query replaces O(n·V) linear scan
+- 93 Rust tests, 75 Swift tests; clippy clean
+- ROADMAP `v1.0.0` and `v2.0.0` (BM25 + inverted index) items checked off
 
 ---
 
