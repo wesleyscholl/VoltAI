@@ -42,10 +42,24 @@ struct ContentView: View {
             }
         }
         .alert(isPresented: $showErrorAlert) {
-            let msg = vm.lastError ?? "Index file missing"
-            return Alert(title: Text("Index file missing"), message: Text(msg), dismissButton: .default(Text("Open Index"), action: { 
-                selection = 1; 
-                vm.lastError = nil;
+            let msg = vm.lastError ?? "An unknown error occurred."
+            let title: String
+            if let err = vm.lastError {
+                if err.contains("missing") || err.contains("not found") || err.contains("does not exist") {
+                    title = "Index File Missing"
+                } else if err.contains("timeout") || err.contains("timed out") {
+                    title = "Indexing Timed Out"
+                } else if err.contains("failed to load") || err.contains("corrupted") || err.contains("truncated") {
+                    title = "Index Corrupted"
+                } else {
+                    title = "Indexing Error"
+                }
+            } else {
+                title = "Error"
+            }
+            return Alert(title: Text(title), message: Text(msg), dismissButton: .default(Text("Open Index"), action: {
+                selection = 1
+                vm.lastError = nil
                 hasShownErrorAlert = false
             }))
         }
@@ -451,9 +465,17 @@ struct ContentView: View {
                             }
                             Button("Refresh models") {
                                 Task {
-                                    let models = await VoltAICaller.listOllamaModels()
+                                    let status = await VoltAICaller.checkOllamaStatus()
                                     await MainActor.run {
-                                        vm.availableModels = models
+                                        vm.ollamaStatus = status
+                                        if case .ready(let models) = status {
+                                            vm.availableModels = models
+                                            if vm.selectedModel == nil {
+                                                vm.selectedModel = VoltAIViewModel.selectPreferredModel(from: models)
+                                            }
+                                        } else {
+                                            vm.availableModels = []
+                                        }
                                     }
                                 }
                             }

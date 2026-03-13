@@ -139,6 +139,7 @@ final class SelectPreferredModelTests: XCTestCase {
 
 // MARK: - VoltAIViewModel.loadDocsFromIndexFile
 
+@MainActor
 final class LoadDocsFromIndexFileTests: XCTestCase {
 
     private func writeTempIndex(_ index: Index) throws -> URL {
@@ -219,6 +220,7 @@ final class LoadDocsFromIndexFileTests: XCTestCase {
 
 // MARK: - VoltAIViewModel state and synchronous behaviour
 
+@MainActor
 final class VoltAIViewModelStateTests: XCTestCase {
 
     func test_initialMessages_containsSystemMessage() {
