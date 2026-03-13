@@ -95,6 +95,11 @@ enum IndexFormat {
     Binary,
 }
 
+/// BM25 free parameters (Robertson-Sparck Jones variant).
+/// k1 controls term frequency saturation; b controls document length normalisation.
+const BM25_K1: f32 = 1.2;
+const BM25_B: f32 = 0.75;
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Doc {
     id: String,
@@ -106,6 +111,11 @@ struct Doc {
 struct Index {
     docs: Vec<Doc>,
     terms: Vec<String>,
+    /// BM25-IDF (Robertson-Sparck Jones) per term, parallel to `terms`.
+    /// Stored so `query_with_ollama` can score without re-computing IDF from DF counts.
+    idf: Vec<f32>,
+    /// Pre-normalised BM25 term weights (IDF excluded): `(tf*(k1+1))/(tf+k1*(1-b+b*|d|/avgdl))`.
+    /// Score = dot_product(q_vec, vectors[doc]) where q_vec[t] = idf[t] for query terms.
     vectors: Vec<Vec<f32>>,
 }
 
@@ -133,9 +143,9 @@ fn tokenize(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// Computes the dot product of two vectors.
-/// Equivalent to cosine similarity only when both inputs are L2-normalized unit vectors.
-/// All call sites in the query path pre-normalize their vectors, so this holds there.
+/// Computes the inner product of two vectors.
+/// With BM25, documents store pre-normalised term weights and the query vector stores IDF values,
+/// so the dot product yields the BM25 score directly without L2 normalisation.
 fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
@@ -223,18 +233,35 @@ fn index_dir(dir: &Path, out: &Path, format: IndexFormat) -> Result<()> {
     };
 
     let n_docs = docs.len() as f32;
-    // Smooth IDF: rare terms get high weight; terms in every document approach 0.
+
+    // Compute document lengths (token counts) needed for BM25 length normalisation.
+    let doc_lengths: Vec<usize> = docs_tokens.iter().map(|t| t.len()).collect();
+    let avg_doc_length = if doc_lengths.is_empty() {
+        1.0_f32
+    } else {
+        doc_lengths.iter().sum::<usize>() as f32 / doc_lengths.len() as f32
+    };
+
+    // BM25-IDF (Robertson-Sparck Jones): rare terms get high weight; ubiquitous terms approach 0.
     let idf: Vec<f32> = df_counts
         .iter()
-        .map(|&df_count| (n_docs / (df_count as f32 + 1.0)).ln().max(0.0))
+        .map(|&df_count| {
+            ((n_docs - df_count as f32 + 0.5) / (df_count as f32 + 0.5) + 1.0).ln()
+        })
         .collect();
 
     let term_index: HashMap<&String, usize> =
         terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
 
+    // Build pre-normalised BM25 term weight vectors (IDF excluded).
+    // `vectors[i][j]` = (tf * (k1+1)) / (tf + k1 * (1 - b + b * |d_i| / avgdl))
+    // At query time: score = dot_product(q_vec, vectors[doc]) where q_vec[t] = idf[t].
     let vectors: Vec<Vec<f32>> = docs_tokens
         .par_iter()
-        .map(|toks| {
+        .enumerate()
+        .map(|(doc_idx, toks)| {
+            let dl = doc_lengths[doc_idx];
+            let dl_norm = 1.0 - BM25_B + BM25_B * dl as f32 / avg_doc_length;
             let mut tf: HashMap<usize, f32> = HashMap::new();
             for t in toks.iter() {
                 if let Some(&i) = term_index.get(t) {
@@ -243,28 +270,17 @@ fn index_dir(dir: &Path, out: &Path, format: IndexFormat) -> Result<()> {
             }
             let mut vec: Vec<f32> = vec![0.0; terms.len()];
             for (i, &count) in tf.iter() {
-                let tfv = 1.0 + count.log2();
-                vec[*i] = tfv * idf[*i];
+                vec[*i] = (count * (BM25_K1 + 1.0)) / (count + BM25_K1 * dl_norm);
             }
             vec
-        })
-        .collect();
-
-    let vectors_normed: Vec<Vec<f32>> = vectors
-        .into_par_iter()
-        .map(|mut v| {
-            let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-            for x in v.iter_mut() {
-                *x /= norm;
-            }
-            v
         })
         .collect();
 
     let index = Index {
         docs,
         terms,
-        vectors: vectors_normed,
+        idf,
+        vectors,
     };
 
     let fout = File::create(out)?;
@@ -279,17 +295,15 @@ fn index_dir(dir: &Path, out: &Path, format: IndexFormat) -> Result<()> {
 /// Prints keyword-derived summaries for the top-`k` documents matching `q`.
 /// Used as a deterministic, non-LLM fallback when Ollama is unavailable or fails.
 fn print_keyword_fallback(idx: &Index, q: &str, k: usize) {
-    let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
     let term_map: HashMap<&String, usize> =
         idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+    // BM25 query vector: weight each query term by its pre-computed IDF.
+    // Score = dot_product(q_vec, vectors[doc]) — no L2 normalisation needed.
+    let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
     for t in tokenize(q).iter() {
         if let Some(&i) = term_map.get(t) {
-            q_vec[i] += 1.0;
+            q_vec[i] = idx.idf[i];
         }
-    }
-    let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-    for x in q_vec.iter_mut() {
-        *x /= norm;
     }
     let mut sims: Vec<(usize, f32)> = idx
         .vectors
@@ -396,23 +410,18 @@ fn query_with_ollama(
     let mut prompt = q.to_string();
     if let Some(ref idx) = maybe_idx {
         if !idx.terms.is_empty() && !idx.vectors.is_empty() {
-            // Build the query vector using raw term counts (not log-TF).
-            // Document vectors use log-TF (1 + log₂ count) during indexing; query vectors
-            // intentionally use raw counts to avoid over-boosting repeated query terms.
-            // This asymmetric weighting is standard practice and produces competitive
-            // retrieval quality without requiring BM25 (planned for v2.0.0).
+            // Build the BM25 query vector: for each unique query term, set its weight to
+            // the pre-computed BM25-IDF score stored in the index.  No L2 normalisation is
+            // needed because the document vectors already incorporate length normalisation.
+            // Score(d,q) = Σ_t idf[t] * bm25_tf(t,d) = dot_product(q_vec, vectors[d]).
             let q_toks = tokenize(q);
             let mut q_vec: Vec<f32> = vec![0.0; idx.terms.len()];
             let term_map: HashMap<&String, usize> =
                 idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
             for t in q_toks.iter() {
                 if let Some(&i) = term_map.get(t) {
-                    q_vec[i] += 1.0;
+                    q_vec[i] = idx.idf[i];
                 }
-            }
-            let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-            for x in q_vec.iter_mut() {
-                *x /= norm;
             }
 
             let is_general_query = q.to_lowercase().contains("summarize")
@@ -703,7 +712,7 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
     let f = File::open(&index_path)?;
     let idx: Index = serde_json::from_reader(f)?;
 
-    // Build a normalized query vector from terms known to be in the vocabulary.
+    // Build a BM25 query vector: weight each query term by its IDF.
     let query_terms = ["database", "neural", "photosynthesis"];
     let term_map: HashMap<&String, usize> =
         idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
@@ -711,11 +720,9 @@ fn run_bench(doc_count: usize, query_iterations: usize) -> Result<()> {
     let mut q_vec = vec![0.0f32; idx.terms.len()];
     for t in &query_terms {
         if let Some(&i) = term_map.get(&t.to_string()) {
-            q_vec[i] = 1.0;
+            q_vec[i] = idx.idf[i];
         }
     }
-    let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-    q_vec.iter_mut().for_each(|x| *x /= norm);
 
     println!("Running {} query iterations...", query_iterations);
     let mut query_times_us: Vec<u128> = Vec::with_capacity(query_iterations);
@@ -960,6 +967,7 @@ mod tests {
                 text: "content 1".to_string(),
             }],
             terms: vec!["content".to_string(), "test".to_string()],
+            idf: vec![1.0, 1.0],
             vectors: vec![vec![0.5, 0.5]],
         };
 
@@ -1086,6 +1094,7 @@ mod tests {
         // Create a minimal index
         let idx = Index {
             terms: vec!["test".to_string(), "document".to_string()],
+            idf: vec![1.0, 1.0],
             docs: vec![Doc {
                 id: "1".to_string(),
                 path: "test.txt".to_string(),
@@ -1337,8 +1346,8 @@ mod tests {
     }
 
     #[test]
-    fn test_tfidf_retrieval_ranks_rare_term_document_first() -> Result<()> {
-        // Validates that IDF weighting causes a document containing a rare term to rank
+    fn test_bm25_retrieval_ranks_rare_term_document_first() -> Result<()> {
+        // Validates that BM25-IDF weighting causes a document containing a rare term to rank
         // above documents containing only common terms when queried by that rare term.
         let temp_dir = TempDir::new()?;
 
@@ -1365,17 +1374,13 @@ mod tests {
         let f = File::open(&index_path)?;
         let idx: Index = serde_json::from_reader(f)?;
 
-        // Build a normalized query vector for "photosynthesis"
+        // Build a BM25 query vector for "photosynthesis": weight by IDF, no L2 normalisation
         let term_map: HashMap<&String, usize> =
             idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
         let mut q_vec = vec![0.0f32; idx.terms.len()];
         let query_term = "photosynthesis".to_string();
         if let Some(&i) = term_map.get(&query_term) {
-            q_vec[i] = 1.0;
-        }
-        let norm = q_vec.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
-        for x in q_vec.iter_mut() {
-            *x /= norm;
+            q_vec[i] = idx.idf[i];
         }
 
         let scores: Vec<(usize, f32)> = idx
@@ -1399,6 +1404,95 @@ mod tests {
             best_path.contains("a.txt"),
             "doc a.txt (photosynthesis) should rank first, got: {}",
             best_path
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bm25_idf_formula() -> Result<()> {
+        // Verify that `index_dir` computes Robertson-Sparck Jones BM25-IDF correctly.
+        // With N=3 docs and df=1, expected IDF = ln((3-1+0.5)/(1+0.5) + 1) ≈ 0.9808.
+        let temp_dir = TempDir::new()?;
+
+        // "photon" appears only in doc_a — df = 1, N = 3.
+        std::fs::write(temp_dir.path().join("a.txt"), "photon quantum entanglement")?;
+        std::fs::write(temp_dir.path().join("b.txt"), "classical mechanics velocity")?;
+        std::fs::write(temp_dir.path().join("c.txt"), "thermodynamics entropy heat")?;
+
+        let index_path = temp_dir.path().join("idx.json");
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
+
+        let f = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(f)?;
+
+        let term_map: HashMap<&String, usize> =
+            idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+
+        let photon_idx = term_map.get(&"photon".to_string()).copied();
+        assert!(photon_idx.is_some(), "'photon' must be in vocabulary");
+        let i = photon_idx.unwrap();
+
+        // N=3, df=1 → IDF = ln((3-1+0.5)/(1+0.5)+1) = ln(2.5/1.5+1) = ln(2.6̄) ≈ 0.9808
+        let expected = ((3.0_f32 - 1.0 + 0.5) / (1.0 + 0.5) + 1.0).ln();
+        assert!(
+            (idx.idf[i] - expected).abs() < 1e-4,
+            "BM25 IDF for photon: expected {:.6}, got {:.6}",
+            expected,
+            idx.idf[i]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bm25_shorter_doc_scores_higher_with_equal_tf() -> Result<()> {
+        // BM25 document-length normalisation: given equal TF for the query term,
+        // the shorter document must have a higher BM25 term weight.
+        let temp_dir = TempDir::new()?;
+
+        // doc_a: very short — "rust embedded minimal" (3 content tokens)
+        // doc_b: much longer — 10 content tokens, also contains "rust" once
+        std::fs::write(temp_dir.path().join("a.txt"), "rust embedded minimal")?;
+        std::fs::write(
+            temp_dir.path().join("b.txt"),
+            "rust programming systems concurrent memory cryptography \
+             benchmark performance distributed parallel",
+        )?;
+
+        let index_path = temp_dir.path().join("idx.json");
+        index_dir(temp_dir.path(), &index_path, IndexFormat::Json)?;
+
+        let f = File::open(&index_path)?;
+        let idx: Index = serde_json::from_reader(f)?;
+
+        // Identify which doc index corresponds to a.txt and b.txt
+        let doc_a_idx = idx
+            .docs
+            .iter()
+            .position(|d| d.path.contains("a.txt"))
+            .expect("a.txt not found in index");
+        let doc_b_idx = idx
+            .docs
+            .iter()
+            .position(|d| d.path.contains("b.txt"))
+            .expect("b.txt not found in index");
+
+        let term_map: HashMap<&String, usize> =
+            idx.terms.iter().enumerate().map(|(i, t)| (t, i)).collect();
+        let rust_idx = term_map
+            .get(&"rust".to_string())
+            .copied()
+            .expect("'rust' must be in vocabulary");
+
+        let weight_a = idx.vectors[doc_a_idx][rust_idx];
+        let weight_b = idx.vectors[doc_b_idx][rust_idx];
+
+        assert!(
+            weight_a > weight_b,
+            "shorter doc (a.txt, bm25_tf={:.4}) should outscore longer doc (b.txt, bm25_tf={:.4})",
+            weight_a,
+            weight_b
         );
 
         Ok(())
@@ -1597,6 +1691,7 @@ mod tests {
                 "docker".to_string(),
                 "container".to_string(),
             ],
+            idf: vec![1.0, 1.0, 1.0],
             docs: vec![Doc {
                 id: "1".to_string(),
                 path: "test.txt".to_string(),
@@ -1754,6 +1849,7 @@ mod tests {
 
         let idx = Index {
             terms: vec![],
+            idf: vec![],
             docs: vec![],
             vectors: vec![],
         };
@@ -2026,6 +2122,7 @@ mod tests {
         let idx = Index {
             docs,
             terms,
+            idf: vec![1.0, 1.0, 1.0, 1.0],
             vectors,
         };
         // Should rank doc-0 first for "programming memory" and not panic
@@ -2037,6 +2134,7 @@ mod tests {
         let idx = Index {
             docs: vec![],
             terms: vec![],
+            idf: vec![],
             vectors: vec![],
         };
         print_keyword_fallback(&idx, "any query", 5);
