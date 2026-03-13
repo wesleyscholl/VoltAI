@@ -303,6 +303,56 @@ final class VoltAIViewModelStateTests: XCTestCase {
         let vm = VoltAIViewModel()
         XCTAssertFalse(vm.aborted)
     }
+
+    func test_selectedDoc_initiallyNil() {
+        let vm = VoltAIViewModel()
+        XCTAssertNil(vm.selectedDoc)
+    }
+
+    func test_selectedDoc_canBeSetAndCleared() {
+        let vm = VoltAIViewModel()
+        let doc = Doc(id: "1", path: "/tmp/test.txt", text: "hello")
+        vm.selectedDoc = doc
+        XCTAssertEqual(vm.selectedDoc?.id, "1")
+        vm.selectedDoc = nil
+        XCTAssertNil(vm.selectedDoc)
+    }
+}
+
+// MARK: - VoltAIViewModel result count
+
+@MainActor
+final class ResultCountTests: XCTestCase {
+
+    func test_resultCount_defaultIsFive() {
+        // Clear any persisted value from previous test runs.
+        UserDefaults.standard.removeObject(forKey: "resultCount")
+        let vm = VoltAIViewModel(caller: MockVoltAICaller())
+        XCTAssertEqual(vm.resultCount, 5)
+    }
+
+    func test_sendQuery_usesResultCount() async {
+        defer { UserDefaults.standard.removeObject(forKey: "resultCount") }
+        let mock = MockVoltAICaller()
+        let vm = VoltAIViewModel(caller: mock)
+        vm.resultCount = 7
+        vm.input = "what is BM25?"
+        vm.sendQuery()
+        await waitForTasks()
+
+        XCTAssertEqual(mock.queryCallCount, 1)
+        XCTAssertEqual(mock.lastQuery?.k, 7)
+    }
+
+    func test_resultCount_withinBounds() {
+        defer { UserDefaults.standard.removeObject(forKey: "resultCount") }
+        let mock = MockVoltAICaller()
+        let vm = VoltAIViewModel(caller: mock)
+        vm.resultCount = 1
+        XCTAssertEqual(vm.resultCount, 1)
+        vm.resultCount = 20
+        XCTAssertEqual(vm.resultCount, 20)
+    }
 }
 
 // MARK: - ChatMessage
@@ -527,6 +577,7 @@ final class SendQueryAsyncTests: XCTestCase {
         let mock = MockVoltAICaller()
         let vm = VoltAIViewModel(caller: mock)
         vm.selectedModel = "gemma3:4b"
+        vm.resultCount = 5   // explicit — independent of UserDefaults state
         vm.input = "distributed systems"
         vm.sendQuery()
         await waitForTasks()

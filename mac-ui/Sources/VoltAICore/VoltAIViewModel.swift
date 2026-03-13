@@ -19,6 +19,13 @@ public final class VoltAIViewModel: ObservableObject {
     @Published public var availableModels: [String] = []
     @Published public var selectedModel: String? = nil
     @Published public var ollamaStatus: OllamaStatus = .notInstalled
+    @Published public var resultCount: Int = {
+        let v = UserDefaults.standard.integer(forKey: "resultCount")
+        return v > 0 ? v : 5
+    }() {
+        didSet { UserDefaults.standard.set(resultCount, forKey: "resultCount") }
+    }
+    @Published public var selectedDoc: Doc? = nil
 
     private let caller: any VoltAICallerProtocol
     private var currentTask: Task<Void, Never>? = nil
@@ -63,7 +70,7 @@ public final class VoltAIViewModel: ObservableObject {
             self.statusText = "Generating response..."
             let indexPath = FileManager.default.currentDirectoryPath + "/../voltai_index.json"
             let res = await self.caller.query(
-                index: URL(fileURLWithPath: indexPath), q: q, k: 5, model: self.selectedModel)
+                index: URL(fileURLWithPath: indexPath), q: q, k: self.resultCount, model: self.selectedModel)
 
             let lower = res.lowercased()
             let isMissingIndex = lower.contains("index file") || lower.contains("does not exist")

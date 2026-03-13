@@ -7,6 +7,8 @@ struct ContentView: View {
     @State private var selection = 0
     @State private var showErrorAlert = false
     @State private var hasShownErrorAlert = false
+    @AppStorage("themeIndex") private var themeIndex: Int = 0
+    @AppStorage("backgroundIndexingEnabled") private var backgroundIndexingEnabled: Bool = false
 
     var body: some View {
         TabView(selection: $selection) {
@@ -62,6 +64,15 @@ struct ContentView: View {
                 vm.lastError = nil
                 hasShownErrorAlert = false
             }))
+        }
+        .preferredColorScheme(resolvedColorScheme(themeIndex))
+    }
+
+    private func resolvedColorScheme(_ index: Int) -> ColorScheme? {
+        switch index {
+        case 1: return .light
+        case 2: return .dark
+        default: return nil
         }
     }
 
@@ -403,11 +414,16 @@ struct ContentView: View {
                             }
                             .padding(.vertical, 8)
                             .padding(.horizontal, 4)
+                            .contentShape(Rectangle())
+                            .onTapGesture { vm.selectedDoc = doc }
                         }
                     }
                     .listStyle(.inset)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
+                    .sheet(item: $vm.selectedDoc) { doc in
+                        DocumentDetailView(doc: doc)
+                    }
                 }
 
                 Spacer()
@@ -437,10 +453,10 @@ struct ContentView: View {
                 VStack(spacing: 24) {
                     SectionView(title: "General", icon: "gear") {
                         VStack(spacing: 16) {
-                            Toggle("Enable background indexing", isOn: .constant(true))
+                            Toggle("Enable background indexing", isOn: $backgroundIndexingEnabled)
                                 .toggleStyle(SwitchToggleStyle(tint: Color(red: 0.11, green: 0.56, blue: 0.8)))
 
-                            Picker("Theme", selection: .constant(0)) {
+                            Picker("Theme", selection: $themeIndex) {
                                 Text("System").tag(0)
                                 Text("Light").tag(1)
                                 Text("Dark").tag(2)
@@ -503,6 +519,8 @@ struct ContentView: View {
                             .cornerRadius(8)
                         }
                         .buttonStyle(.plain)
+                        Stepper("Results per query: \(vm.resultCount)", value: $vm.resultCount, in: 1...20)
+                            .padding(.vertical, 4)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -559,6 +577,36 @@ struct MessageRow: View {
             Spacer()
         }
         .padding(.horizontal, 4)
+    }
+}
+
+struct DocumentDetailView: View {
+    let doc: Doc
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(URL(fileURLWithPath: doc.path).lastPathComponent)
+                        .font(.title2).bold()
+                    Text(doc.path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            Divider()
+            ScrollView {
+                Text(doc.text)
+                    .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding()
+        .frame(minWidth: 500, minHeight: 400)
     }
 }
 
